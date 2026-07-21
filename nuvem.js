@@ -13,7 +13,10 @@
 // Preenche isto UMA vez e todos os dispositivos que abram esta app já vêm
 // ligados — não é preciso reconfigurar nada em cada telemóvel ou computador.
 // (A chave anon é pública por design: quem manda é o RLS do lado do servidor.)
-const NUVEM_PADRAO = { url: '', anonKey: '' };
+const NUVEM_PADRAO = {
+  url: 'https://xdanntvncnoootzgvvvd.supabase.co',
+  anonKey: 'sb_publishable_YuYT22nXNz8ak-Ouovbejg_ZOqONL_H',
+};
 
 const Nuvem = {
   cfg: null,        // { url, anonKey }

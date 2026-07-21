@@ -1,6 +1,6 @@
 // Service worker: guarda os ficheiros da app para funcionar sem internet.
 // NAO toca nos teus dados — esses vivem no IndexedDB e nunca passam por aqui.
-const CACHE = 'roupeiro-v7';
+const CACHE = 'roupeiro-v8';
 const FICHEIROS = [
   './',
   './index.html',
