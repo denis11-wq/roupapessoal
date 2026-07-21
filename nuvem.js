@@ -115,10 +115,15 @@ const Nuvem = {
   },
 
   // ---------- dados ----------
-  async lerRemoto(perfilId) {
+  // `comBlob` decide se o roupeiro inteiro vem no pedido. Por omissão NÃO vem:
+  // quase todas as leituras só querem saber o número da versão, e arrastar
+  // megabytes de fotos para comparar um inteiro é desperdício puro de quota.
+  async lerRemoto(perfilId, comBlob = false) {
     const filtro = perfilId ? `&perfil=eq.${encodeURIComponent(perfilId)}` : '';
+    const campos = 'perfil,nome,emoji,salt,iteracoes,verificador,versao,atualizado'
+      + (comBlob && perfilId ? ',blob' : '');
     const linhas = await Nuvem.comSessao(() =>
-      Nuvem.pedir(`/rest/v1/roupeiros?select=perfil,nome,emoji,salt,iteracoes,verificador,versao,atualizado${perfilId ? ',blob' : ''}${filtro}`));
+      Nuvem.pedir(`/rest/v1/roupeiros?select=${campos}${filtro}`));
     return linhas || [];
   },
 
@@ -127,7 +132,7 @@ const Nuvem = {
       throw new Error('Este perfil não tem palavra-passe. Protege-o primeiro — não envio dados sem cifra.');
 
     const versaoLocal = (await DB.metaGet('nuvemVersao')) || 0;
-    const remotos = await Nuvem.lerRemoto(perfil.id);
+    const remotos = await Nuvem.lerRemoto(perfil.id);   // só a versão, sem o blob
     const remoto = remotos[0];
     if (remoto && remoto.versao > versaoLocal && !forcar)
       return { conflito: true, remoto };
@@ -166,7 +171,7 @@ const Nuvem = {
   // Traz o perfil da nuvem. Precisa da palavra-passe do perfil para decifrar —
   // o servidor entrega o bloco, mas só este dispositivo o consegue abrir.
   async receber(perfilId, senha) {
-    const linhas = await Nuvem.lerRemoto(perfilId);
+    const linhas = await Nuvem.lerRemoto(perfilId, true);
     if (!linhas.length) throw new Error('Não há nada na nuvem para este perfil');
     const r = linhas[0];
     const chave = await Cripto.derivarChave(senha, r.salt, r.iteracoes || Cripto.ITERACOES_LEGADO);
@@ -219,21 +224,25 @@ Nuvem.puxarSeMaisRecente = async function () {
   const perfil = Perfis.atual;
   try {
     const versaoLocal = (await DB.metaGet('nuvemVersao')) || 0;
-    const linhas = await Nuvem.lerRemoto(perfil.id);
-    const r = linhas[0];
-    if (!r || !r.blob || r.versao <= versaoLocal) return false;
+    // primeiro só a versão: na esmagadora maioria das entradas não há nada novo
+    // e o pedido fica em bytes em vez de megabytes
+    const cabecalho = (await Nuvem.lerRemoto(perfil.id))[0];
+    if (!cabecalho || cabecalho.versao <= versaoLocal) return false;
 
     // conflito real: este dispositivo tem alterações que nunca subiram
     if (Nuvem.temPendente(perfil.id)) {
-      const quando = new Date(r.atualizado).toLocaleString('pt-PT');
+      const quando = new Date(cabecalho.atualizado).toLocaleString('pt-PT');
       const trazer = confirm(
-        `A nuvem tem uma versão mais recente (${quando}, versão ${r.versao}), mas este dispositivo `
+        `A nuvem tem uma versão mais recente (${quando}, versão ${cabecalho.versao}), mas este dispositivo `
         + `também tem alterações que nunca chegaram a subir.\n\n`
         + `OK = ficar com a versão da nuvem (perdes as alterações locais)\n`
         + `Cancelar = manter este dispositivo e enviá-lo por cima`);
       if (!trazer) { await Nuvem.sincronizarAgora(false); return false; }
     }
 
+    // só agora é que vale a pena descarregar o roupeiro inteiro
+    const r = (await Nuvem.lerRemoto(perfil.id, true))[0];
+    if (!r || !r.blob) return false;
     const dados = await Cripto.decifrar(Perfis.chave, JSON.parse(r.blob));
     await DB.importarBruto(dados);
     await DB.por('meta', r.versao, 'nuvemVersao');
