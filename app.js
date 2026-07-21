@@ -164,6 +164,8 @@ let loteItens = [];                    // rascunhos do modal de lote
 let calMes = new Date();               // mês visível no calendário
 
 const $ = id => document.getElementById(id);
+// ids opacos e sem colisões mesmo quando se guardam 20 peças no mesmo milissegundo
+const novoId = prefixo => prefixo + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 
 // ---------- Arranque ----------
 init();
@@ -173,6 +175,7 @@ async function init() {
   ligarEventos();
   ligarEventosConta();
   registarServiceWorker();
+  vigiarMudancaDeDia();
 
   await Perfis.carregar();
   Nuvem.carregarCfg();
@@ -215,6 +218,17 @@ function trancarApp() {
   DB.fechar();
   itens = []; outfits = []; historico = []; hoje = null; semana = null;
   gostos = { scores: {}, pares: {} };
+  // trancar tem de apagar mesmo o que está no ecrã: a proposta do gerador e o
+  // dia aberto no histórico ficavam visíveis por baixo do ecrã de bloqueio
+  outfitGerado = null; razoesGeradas = [];
+  $('geradorResultado').style.display = 'none';
+  $('geradorErro').style.display = 'none';
+  $('geradorManequim').innerHTML = '';
+  $('hojeManequim').innerHTML = '';
+  delete $('calDetalhe').dataset.escolhido;
+  $('calDetalhe').innerHTML = '';
+  ['lacunasResultado', 'capsulaResultado', 'malaResultado', 'lacunasOrfas'].forEach(id => $(id).innerHTML = '');
+  document.querySelectorAll('.modal-overlay.aberto').forEach(esconderOverlay);
   renderTudo();
   mostrarEcraPerfis(null);
   toast('🔒 Trancado');
@@ -226,6 +240,16 @@ function normalizarItem(i) {
     formalidade: 1, usos: 0, ultimoUso: null, estacoes: [], recortada: false,
     preco: null, dataCompra: null, ...i,
   };
+  // um backup à mão ou um campo em falta não pode rebentar o render inteiro
+  base.nome = String(base.nome ?? 'Sem nome');
+  base.categoria = CATEGORIAS.some(c => c.id === base.categoria) ? base.categoria : 'tshirt';
+  base.cor = CORES.includes(base.cor) ? base.cor : 'branco';
+  base.estado = base.estado === 'lavar' ? 'lavar' : 'disponivel';
+  base.estacoes = Array.isArray(base.estacoes) ? base.estacoes.filter(e => e in ESTACAO_EMOJI) : [];
+  base.formalidade = Math.max(0, Math.min(3, Number(base.formalidade) || 0));
+  base.usos = Math.max(0, Number(base.usos) || 0);
+  base.preco = base.preco == null || isNaN(Number(base.preco)) ? null : Number(base.preco);
+  base.criado = base.criado || hojeStr();
   // peças antigas herdam a camada da categoria
   if (base.camada == null) base.camada = cat(base.categoria).camada ?? 0;
   return base;
@@ -299,6 +323,8 @@ function ligarEventos() {
 
   // Definições
   $('btnDefinicoes').addEventListener('click', abrirDefinicoes);
+  // o indicador da nuvem era um botão que não fazia nada
+  $('estadoNuvem').addEventListener('click', abrirNuvem);
   $('btnDefFechar').addEventListener('click', () => fecharModal('modalDefinicoes'));
   $('btnExportar').addEventListener('click', exportarTudo);
   $('btnImportar').addEventListener('click', () => $('importInput').click());
@@ -317,10 +343,13 @@ function ligarEventos() {
   $('filtroCategoria').addEventListener('change', renderBiblioteca);
   $('filtroEstado').addEventListener('change', renderBiblioteca);
   $('filtroFormalidade').addEventListener('change', renderBiblioteca);
+  $('btnLimparFiltros').addEventListener('click', limparFiltrosBiblioteca);
 
   // Modal peça
   $('btnPecaCancelar').addEventListener('click', () => fecharModal('modalPeca'));
   $('btnPecaGuardar').addEventListener('click', guardarPeca);
+  $('fNome').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); guardarPeca(); } });
+  $('oNome').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); guardarOutfitManual(); } });
   const zone = $('fotoZone');
   zone.addEventListener('click', e => { if (e.target.closest('input,button')) return; $('fotoInput').click(); });
   // os inputs vivem dentro da zona: sem isto, o clique programático na câmara
@@ -509,7 +538,7 @@ async function carregarFoto(file) {
     fotoOriginal = fotoAtual;
     fotoRecortada = false;
     mostrarFotoNoModal();
-    if (!$('fNome').value.trim() || true) await detetarCorNoModal(false);
+    await detetarCorNoModal(false);
   } catch {
     toast('⚠️ Não consegui ler essa imagem');
   }
@@ -836,8 +865,11 @@ async function guardarPeca() {
   const nome = $('fNome').value.trim();
   if (!nome) { toast('⚠️ Dá um nome à peça'); return; }
   const estacoes = [...$('fEstacoes').querySelectorAll('.btn-toggle.active')].map(b => b.dataset.estacao);
-  const base = editId ? itens.find(x => x.id === editId) : {
-    id: 'p' + Date.now() + Math.random().toString(36).slice(2, 6),
+  const original = editId ? itens.find(x => x.id === editId) : null;
+  // a peça pode ter sido apagada noutro separador enquanto o modal estava aberto
+  if (editId && !original) { toast('⚠️ Essa peça já não existe'); fecharModal('modalPeca'); editId = null; renderTudo(); return; }
+  const base = original || {
+    id: novoId('p'),
     estado: 'disponivel', usos: 0, ultimoUso: null, criado: hojeStr(),
   };
   const preco = parseFloat($('fPreco').value);
@@ -943,7 +975,7 @@ async function guardarLote() {
   for (const l of loteItens) {
     const nome = (l.nome || '').trim() || `${cat(l.categoria).nome} ${l.cor}`;
     const item = normalizarItem({
-      id: 'p' + Date.now() + Math.random().toString(36).slice(2, 6),
+      id: novoId('p'),
       nome, categoria: l.categoria, cor: l.cor,
       formalidade: 1, estacoes: [], descricao: '', favorito: false,
       foto: l.foto, recortada: false,
@@ -973,8 +1005,23 @@ function renderBiblioteca() {
     (ff === '' || i.formalidade === Number(ff))
   );
   $('bibliotecaVazia').style.display = itens.length ? 'none' : 'block';
+  // roupeiro cheio mas filtros a não devolver nada: sem isto a grelha ficava
+  // simplesmente em branco e parecia que as peças tinham desaparecido
+  const semResultados = itens.length > 0 && lista.length === 0;
+  $('bibliotecaSemResultados').style.display = semResultados ? 'block' : 'none';
+  $('bibliotecaContagem').textContent = itens.length
+    ? (lista.length === itens.length ? `${itens.length} peça(s)` : `${lista.length} de ${itens.length} peça(s)`)
+    : '';
   $('gridBiblioteca').innerHTML = lista.map(cardPeca).join('');
   ligarCards('gridBiblioteca');
+}
+
+function limparFiltrosBiblioteca() {
+  $('pesquisa').value = '';
+  $('filtroCategoria').value = '';
+  $('filtroEstado').value = '';
+  $('filtroFormalidade').value = '';
+  renderBiblioteca();
 }
 
 function cardPeca(i) {
@@ -1018,9 +1065,12 @@ function abrirDetalhe(id) {
 
   const btnEstado = $('btnDetalheEstado');
   btnEstado.textContent = i.estado === 'lavar' ? '✅ Marcar como lavada' : '🧺 Enviar para lavar';
+  // se a gravação falhar (disco cheio), desfaz a alteração em memória —
+  // senão o ecrã mostrava um estado que a base de dados não tem
   btnEstado.onclick = async () => {
-    i.estado = i.estado === 'lavar' ? 'disponivel' : 'lavar';
-    await DB.por('itens', i);
+    const antes = i.estado;
+    i.estado = antes === 'lavar' ? 'disponivel' : 'lavar';
+    if (!await guardarSeguro('itens', i)) { i.estado = antes; return; }
     fecharModal('modalDetalhe');
     toast(i.estado === 'lavar' ? '🧺 Enviada para a lavandaria' : '✨ Peça limpa e disponível');
     renderTudo();
@@ -1029,7 +1079,7 @@ function abrirDetalhe(id) {
   btnFav.textContent = i.favorito ? '☆ Tirar favorito' : '⭐ Favorito';
   btnFav.onclick = async () => {
     i.favorito = !i.favorito;
-    await DB.por('itens', i);
+    if (!await guardarSeguro('itens', i)) { i.favorito = !i.favorito; return; }
     abrirDetalhe(id);
     renderBiblioteca();
   };
@@ -1104,23 +1154,33 @@ function thumbsHtml(ids) {
   }).join('');
 }
 
-function abrirModalOutfit() {
+function abrirModalOutfit(preSelecao) {
   if (!itens.length) { toast('⚠️ Adiciona peças à biblioteca primeiro'); return; }
-  pickerSelecao = new Set();
+  pickerSelecao = new Set((preSelecao || []).filter(id => itens.some(i => i.id === id)));
+  $('modalOutfitTitulo').textContent = preSelecao ? 'Guardar este outfit' : 'Criar outfit';
   $('oNome').value = '';
-  $('gridPicker').innerHTML = itens.map(cardPeca).join('');
-  $('gridPicker').querySelectorAll('.peca-card').forEach(c => c.addEventListener('click', () => {
-    const id = c.dataset.id;
-    if (pickerSelecao.has(id)) { pickerSelecao.delete(id); c.classList.remove('selecionada'); }
-    else { pickerSelecao.add(id); c.classList.add('selecionada'); }
-  }));
+  $('oNome').placeholder = 'Ex: Casual sexta-feira';
+  // as peças já escolhidas aparecem primeiro: com 200 peças no roupeiro,
+  // ninguém quer procurar as 4 que o gerador acabou de sugerir
+  const ordenados = preSelecao
+    ? [...itens].sort((a, b) => pickerSelecao.has(b.id) - pickerSelecao.has(a.id))
+    : itens;
+  $('gridPicker').innerHTML = ordenados.map(cardPeca).join('');
+  $('gridPicker').querySelectorAll('.peca-card').forEach(c => {
+    c.classList.toggle('selecionada', pickerSelecao.has(c.dataset.id));
+    c.addEventListener('click', () => {
+      const id = c.dataset.id;
+      if (pickerSelecao.has(id)) { pickerSelecao.delete(id); c.classList.remove('selecionada'); }
+      else { pickerSelecao.add(id); c.classList.add('selecionada'); }
+    });
+  });
   abrirModal('modalOutfit');
 }
 
 async function guardarOutfitManual() {
   if (pickerSelecao.size < 2) { toast('⚠️ Escolhe pelo menos 2 peças'); return; }
   const o = {
-    id: 'o' + Date.now(),
+    id: novoId('o'),
     nome: $('oNome').value.trim() || 'Outfit ' + (outfits.length + 1),
     pecas: [...pickerSelecao],
     criado: hojeStr(),
@@ -1580,15 +1640,12 @@ async function aplicarFeedback(sinal, detalhe) {
   if (sinal === 'negativo') gerarOutfit();
 }
 
-async function guardarOutfitGerado() {
+// Abre o mesmo modal de criação, já com as peças sugeridas marcadas: dá para
+// trocar uma peça antes de guardar, em vez de aceitar a proposta às cegas.
+// (o prompt() nativo não deixava editar nada e é bloqueado em várias WebViews)
+function guardarOutfitGerado() {
   if (!outfitGerado) return;
-  const nome = prompt('Nome do outfit:', 'Outfit ' + (outfits.length + 1));
-  if (nome === null) return;
-  const o = { id: 'o' + Date.now(), nome: nome.trim() || 'Outfit ' + (outfits.length + 1), pecas: [...outfitGerado], criado: hojeStr() };
-  await DB.por('outfits', o);
-  outfits.push(o);
-  toast('💾 Outfit guardado');
-  renderOutfits();
+  abrirModalOutfit(outfitGerado);
 }
 
 function usarGeradoHoje() {
@@ -1610,14 +1667,34 @@ async function definirHoje(pecasIds, nome) {
 }
 
 function renderHoje() {
-  const data = new Date();
-  $('hojeData').textContent = data.toLocaleDateString('pt-PT', { weekday: 'long', day: 'numeric', month: 'long' });
-  const tem = hoje && hoje.pecas && hoje.pecas.length;
+  $('hojeData').textContent = new Date().toLocaleDateString('pt-PT', { weekday: 'long', day: 'numeric', month: 'long' });
+  // se todas as peças do outfit foram apagadas entretanto, não há outfit nenhum
+  // — mostrar um boneco nu com o botão "usei este" seria pior que não mostrar nada
+  const pecas = (hoje && Array.isArray(hoje.pecas) ? hoje.pecas : [])
+    .map(id => itens.find(x => x.id === id)).filter(Boolean);
+  const tem = pecas.length > 0;
   $('hojeVazio').style.display = tem ? 'none' : 'block';
   $('hojeOutfit').style.display = tem ? 'block' : 'none';
-  if (!tem) return;
-  const pecas = hoje.pecas.map(id => itens.find(x => x.id === id)).filter(Boolean);
+  $('hojeNome').textContent = tem && hoje.nome ? hoje.nome : '';
+  if (!tem) { $('hojeManequim').innerHTML = ''; return; }
   renderManequim('hojeManequim', pecas);
+}
+
+// A app fica aberta no telemóvel durante dias. Sem isto, às 3 da manhã
+// continuava a mostrar o outfit de ontem como sendo o de hoje.
+function vigiarMudancaDeDia() {
+  let dia = hojeStr();
+  setInterval(async () => {
+    if (hojeStr() === dia) return;
+    dia = hojeStr();
+    if (hoje && hoje.data !== dia) {
+      hoje = null;
+      if (DB.db) await DB.por('meta', null, 'hoje');   // com a app trancada não há base aberta
+    }
+    renderHoje();
+    renderSemana();
+    renderCalendario();
+  }, 60000);
 }
 
 function abrirEscolherOutfit() {
@@ -1638,19 +1715,22 @@ function abrirEscolherOutfit() {
 }
 
 async function marcarUsado() {
-  if (!hoje) return;
-  const registo = { data: hoje.data, pecas: [...hoje.pecas], nome: hoje.nome || null };
-  await DB.por('historico', registo);
+  if (!hoje || !hoje.pecas || !hoje.pecas.length) return;
+  // só as peças que ainda existem: registar ids fantasma sujava o histórico
+  const usadas = hoje.pecas.filter(id => itens.some(x => x.id === id));
+  if (!usadas.length) { toast('⚠️ As peças deste outfit já não existem'); return; }
+  const registo = { data: hoje.data, pecas: usadas, nome: hoje.nome || null };
+  if (!await guardarSeguro('historico', registo)) return;
   historico = historico.filter(h => h.data !== registo.data).concat(registo).sort((a, b) => a.data.localeCompare(b.data));
 
-  for (const id of hoje.pecas) {
+  for (const id of usadas) {
     const i = itens.find(x => x.id === id);
     if (!i) continue;
     i.usos = (i.usos || 0) + 1;
     i.ultimoUso = hoje.data;
     if (cat(i.categoria).slot !== 'calcado' && cat(i.categoria).slot !== 'acessorio')
       i.estado = 'lavar'; // sapatos e acessórios não vão para a máquina
-    await DB.por('itens', i);
+    await guardarSeguro('itens', i);
   }
   hoje = null;
   await DB.por('meta', null, 'hoje');
@@ -1732,7 +1812,11 @@ async function gerarSemana() {
       toast('⚠️ Peças insuficientes: preciso de pelo menos uma parte de cima e uma de baixo.');
       return;
     }
-    for (const p of r.pecas) if (cat(p.categoria).slot !== 'calcado') usadas.add(p.id);
+    // calçado e acessórios repetem-se sem problema; o resto é que não deve repetir
+    for (const p of r.pecas) {
+      const s = cat(p.categoria).slot;
+      if (s !== 'calcado' && s !== 'acessorio') usadas.add(p.id);
+    }
     dias.push({ data: dataStr(data), pecas: r.pecas.map(p => p.id), repetiu });
   }
 
@@ -1774,7 +1858,7 @@ function renderStats() {
   const comPreco = itens.filter(i => i.preco != null);
   const valor = comPreco.reduce((a, i) => a + i.preco, 0);
   const gastoMorto = comPreco.filter(i => !i.usos).reduce((a, i) => a + i.preco, 0);
-  const nucleos = calcularNucleos(itens.filter(i => i.estado !== 'apagado'));
+  const nucleos = calcularNucleos(itens);
 
   const cards = [
     { v: total, r: 'peças no roupeiro', n: `${disp} disponíveis, ${total - disp} na lavandaria` },
@@ -1863,7 +1947,7 @@ const chaveTipo = p => `${cat(p.categoria).slot}:${p.cor}:${p.formalidade}`;
 const chaveNucleoTipo = (a, b) => [chaveTipo(a), b ? chaveTipo(b) : '-'].join('||');
 
 function analisarLacunas() {
-  const pool = itens.filter(i => i.estado !== 'apagado');
+  const pool = itens;
   const tops = pool.filter(i => cat(i.categoria).slot === 'top');
   const bottoms = pool.filter(i => cat(i.categoria).slot === 'bottom');
 
@@ -2183,7 +2267,7 @@ async function lavarTudo() {
   const sujos = itens.filter(i => i.estado === 'lavar');
   if (!sujos.length) return;
   if (!confirm(`Marcar ${sujos.length} peça(s) como lavadas e disponíveis?`)) return;
-  for (const i of sujos) { i.estado = 'disponivel'; await DB.por('itens', i); }
+  for (const i of sujos) { i.estado = 'disponivel'; await guardarSeguro('itens', i); }
   toast('✨ Tudo lavado e arrumado!');
   renderTudo();
 }

@@ -259,6 +259,48 @@ Nuvem.puxarSeMaisRecente = async function () {
   }
 };
 
+// ---------- quando verificar ----------
+// Descarregar só à entrada deixava o outro dispositivo desatualizado durante
+// horas. Verificar custa quase nada (vem só o número da versão), por isso
+// passa a acontecer sempre que voltas à app e uma vez por minuto com ela aberta.
+Nuvem.INTERVALO_VERIFICACAO = 60000;
+Nuvem.MIN_ENTRE_VERIFICACOES = 15000;   // trava rajadas de eventos de foco
+Nuvem.ultimaVerificacao = 0;
+Nuvem.aVerificar = false;
+
+Nuvem.verificar = async function (motivo) {
+  if (!Nuvem.ligada() || !Perfis.chave || !Perfis.atual) return;
+  if (Nuvem.aVerificar || Nuvem.aSincronizar) return;
+  if (document.hidden) return;
+  // não trocar os dados debaixo dos pés de quem está a preencher um formulário
+  if (document.querySelector('.modal-overlay.aberto')) return;
+  if (Date.now() - Nuvem.ultimaVerificacao < Nuvem.MIN_ENTRE_VERIFICACOES) return;
+
+  Nuvem.ultimaVerificacao = Date.now();
+  Nuvem.aVerificar = true;
+  try { await Nuvem.puxarSeMaisRecente(); }
+  finally { Nuvem.aVerificar = false; }
+};
+
+Nuvem.ligarVigilancia = function () {
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) { Nuvem.verificar('voltou'); return; }
+    // a sair: não esperar os 25 s do temporizador para despachar o que mudou,
+    // senão pousas o telemóvel e vais para o PC antes de aquilo subir
+    if (Perfis.atual && Perfis.chave && Nuvem.temPendente(Perfis.atual.id)) {
+      clearTimeout(Nuvem.temporizador);
+      Nuvem.sincronizarAgora(true);
+    }
+  });
+  window.addEventListener('focus', () => Nuvem.verificar('foco'));
+  // ao reganhar rede: primeiro despeja o que ficou por enviar, depois verifica
+  window.addEventListener('online', () => {
+    if (Perfis.atual && Nuvem.temPendente(Perfis.atual.id)) Nuvem.sincronizarAgora(true);
+    else Nuvem.verificar('online');
+  });
+  setInterval(() => Nuvem.verificar('temporizador'), Nuvem.INTERVALO_VERIFICACAO);
+};
+
 // pequeno indicador no cabeçalho, para saberes se está mesmo guardado
 function marcarEstadoNuvem(estado) {
   const el = document.getElementById('estadoNuvem');
@@ -307,6 +349,8 @@ async function comBotao(btn, texto, fn) {
 }
 
 Nuvem.ligarEventos = function () {
+  Nuvem.ligarVigilancia();
+
   $('btnNvGuardarCfg').addEventListener('click', () => {
     const url = $('nvUrl').value.trim().replace(/\/$/, '');
     const chave = $('nvChave').value.trim();
