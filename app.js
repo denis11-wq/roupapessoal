@@ -322,7 +322,11 @@ function ligarEventos() {
   $('btnPecaCancelar').addEventListener('click', () => fecharModal('modalPeca'));
   $('btnPecaGuardar').addEventListener('click', guardarPeca);
   const zone = $('fotoZone');
-  zone.addEventListener('click', () => $('fotoInput').click());
+  zone.addEventListener('click', e => { if (e.target.closest('input,button')) return; $('fotoInput').click(); });
+  // os inputs vivem dentro da zona: sem isto, o clique programático na câmara
+  // sobe até à zona e esta abre logo a seguir a galeria por cima
+  $('fotoInput').addEventListener('click', e => e.stopPropagation());
+  $('fotoCamara').addEventListener('click', e => e.stopPropagation());
   $('fotoInput').addEventListener('change', e => e.target.files[0] && carregarFoto(e.target.files[0]));
   // câmara: input separado com capture, senão o telemóvel abre sempre a galeria
   $('fotoCamara').addEventListener('change', e => e.target.files[0] && carregarFoto(e.target.files[0]));
@@ -353,7 +357,8 @@ function ligarEventos() {
 
   // Lote
   const lz = $('loteZone');
-  lz.addEventListener('click', () => $('loteInput').click());
+  lz.addEventListener('click', e => { if (e.target.closest('input,button')) return; $('loteInput').click(); });
+  $('loteInput').addEventListener('click', e => e.stopPropagation());
   $('loteInput').addEventListener('change', e => adicionarAoLote([...e.target.files]));
   lz.addEventListener('dragover', e => { e.preventDefault(); lz.classList.add('dragover'); });
   lz.addEventListener('dragleave', () => lz.classList.remove('dragover'));
