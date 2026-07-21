@@ -1,0 +1,740 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>Roupeiro Digital</title>
+  <meta name="description" content="O teu guarda-roupa, 100% offline. Nada sai do teu dispositivo.">
+  <meta name="theme-color" content="#0b0b11">
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <!-- o iOS ignora SVG no ícone do ecrã principal: tem de ser PNG -->
+  <link rel="apple-touch-icon" sizes="180x180" href="icon-180.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Roupeiro">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header>
+  <span class="logo-mark">👕</span>
+  <h1>Roupeiro <span>Digital</span></h1>
+  <div class="header-actions">
+    <button class="btn btn-icon nuvem-estado" id="estadoNuvem" style="display:none" title="Estado da nuvem">☁️</button>
+    <button class="btn btn-secondary btn-sm chip-perfil" id="chipPerfil" title="Contas">👤</button>
+    <button class="btn btn-icon" id="btnTrancar" title="Trancar">🔒</button>
+    <button class="btn btn-icon" id="btnTema" title="Mudar tema">🌙</button>
+    <button class="btn btn-icon" id="btnDefinicoes" title="Definições e backup">⚙️</button>
+  </div>
+</header>
+
+<!-- ================= ECRÃ DE BLOQUEIO / PERFIS ================= -->
+<div class="bloqueio" id="ecraBloqueio">
+  <div class="bloqueio-caixa">
+    <div class="bloqueio-logo">👕</div>
+    <h1 class="bloqueio-titulo">Roupeiro <span>Digital</span></h1>
+
+    <p class="hint" id="bloqueioAviso" style="display:none;color:var(--danger)">
+      ⚠️ Este browser não suporta encriptação (WebCrypto). Perfis protegidos não vão funcionar.
+      Isto acontece quando o site é aberto sem HTTPS.
+    </p>
+
+    <!-- escolher perfil -->
+    <div id="painelPerfis">
+      <p class="hint">Escolhe a tua conta para entrar.</p>
+      <div class="lista-perfis" id="listaPerfis"></div>
+      <button class="btn btn-secondary" id="btnNovoPerfilBloqueio">+ Criar conta nova</button>
+      <button class="btn btn-secondary" id="btnEntrarNuvem">☁️ Já uso isto noutro dispositivo</button>
+    </div>
+
+    <!-- trazer a conta de outro dispositivo -->
+    <div id="painelNuvem" style="display:none">
+      <p class="hint">
+        Entra com a conta da nuvem para trazeres o teu roupeiro para este dispositivo.
+        Os dados vêm cifrados: a palavra-passe do roupeiro é pedida a seguir e nunca sai daqui.
+      </p>
+
+      <input type="email" id="blEmail" placeholder="Email" autocomplete="username">
+      <input type="password" id="blSenhaConta" placeholder="Palavra-passe" autocomplete="current-password">
+      <div class="bloqueio-acoes">
+        <button class="btn btn-secondary" id="btnBlVoltar">← Voltar</button>
+        <button class="btn btn-primary" id="btnBlEntrarNuvem">☁️ Entrar</button>
+      </div>
+      <div class="lista-perfis" id="blRemotos" style="margin-top:16px"></div>
+    </div>
+
+    <!-- pedir palavra-passe -->
+    <div id="painelSenha" style="display:none">
+      <div class="senha-perfil" id="senhaPerfilNome"></div>
+      <input type="password" id="senhaEntrada" placeholder="Palavra-passe" autocomplete="current-password">
+      <p class="senha-erro" id="senhaErro" style="display:none">❌ Palavra-passe errada</p>
+      <div class="bloqueio-acoes">
+        <button class="btn btn-secondary" id="btnVoltarPerfis">← Voltar</button>
+        <button class="btn btn-primary" id="btnEntrar">🔓 Entrar</button>
+      </div>
+      <p class="hint" style="margin-top:16px;font-size:0.78rem">
+        Não há "esqueci-me da palavra-passe". Os dados estão cifrados com ela e mais ninguém os consegue abrir.
+      </p>
+    </div>
+  </div>
+</div>
+
+<nav class="tabs">
+  <button class="tab active" data-view="hoje">📅 Hoje</button>
+  <button class="tab" data-view="biblioteca">🗂️ Biblioteca</button>
+  <button class="tab" data-view="outfits">👔 Outfits</button>
+  <button class="tab" data-view="gerador">✨ Gerador</button>
+  <button class="tab" data-view="semana">📆 Semana</button>
+  <button class="tab" data-view="analise">🧠 Análise</button>
+  <button class="tab" data-view="lavandaria">🧺 Lavandaria <span class="badge badge-lav" id="badgeLavandaria" style="display:none">0</span></button>
+</nav>
+
+<main>
+
+  <!-- ================= HOJE ================= -->
+  <section class="view active" id="view-hoje">
+    <div class="hoje-wrap">
+      <h2 id="hojeData"></h2>
+
+      <div id="hojeVazio" class="empty-state">
+        <div class="icon">🤔</div>
+        <p>Ainda não escolheste o outfit de hoje.</p>
+        <div class="empty-actions">
+          <button class="btn btn-primary" id="btnHojeGerar">✨ Gerar outfit</button>
+          <button class="btn btn-secondary" id="btnHojeEscolher">👔 Escolher dos meus outfits</button>
+        </div>
+      </div>
+
+      <div id="hojeOutfit" style="display:none">
+        <div id="hojeManequim"></div>
+        <div class="hoje-actions">
+          <button class="btn btn-success" id="btnHojeUsado">✔ Usei este outfit (enviar para lavandaria)</button>
+          <button class="btn btn-secondary" id="btnHojeTrocar">🔄 Trocar</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= BIBLIOTECA ================= -->
+  <section class="view" id="view-biblioteca">
+    <div class="toolbar">
+      <input type="search" id="pesquisa" placeholder="🔍 Pesquisar peças...">
+      <select id="filtroCategoria">
+        <option value="">Todas as categorias</option>
+      </select>
+      <select id="filtroEstado">
+        <option value="">Todos os estados</option>
+        <option value="disponivel">Disponível</option>
+        <option value="lavar">A lavar</option>
+      </select>
+      <select id="filtroFormalidade">
+        <option value="">Qualquer formalidade</option>
+      </select>
+      <button class="btn btn-secondary" id="btnLote">📥 Em lote</button>
+      <button class="btn btn-primary" id="btnAdicionar">+ Adicionar peça</button>
+    </div>
+    <div class="grid" id="gridBiblioteca"></div>
+    <div class="empty-state" id="bibliotecaVazia" style="display:none">
+      <div class="icon">🗂️</div>
+      <p>O teu roupeiro está vazio. Adiciona a primeira peça!</p>
+      <div class="empty-actions">
+        <button class="btn btn-primary" id="btnVazioAdicionar">+ Adicionar peça</button>
+        <button class="btn btn-secondary" id="btnVazioLote">📥 Adicionar várias fotos</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= OUTFITS ================= -->
+  <section class="view" id="view-outfits">
+    <div class="toolbar">
+      <h2 class="toolbar-title">Os meus outfits</h2>
+      <button class="btn btn-primary" id="btnNovoOutfit">+ Criar outfit</button>
+    </div>
+    <div class="outfits-lista" id="listaOutfits"></div>
+    <div class="empty-state" id="outfitsVazio" style="display:none">
+      <div class="icon">👔</div>
+      <p>Ainda não tens outfits guardados. Cria um manualmente ou usa o gerador!</p>
+    </div>
+  </section>
+
+  <!-- ================= GERADOR ================= -->
+  <section class="view" id="view-gerador">
+    <div class="gerador-wrap">
+      <h2>Gerador de outfits</h2>
+      <p class="hint">Gera combinações com as peças disponíveis. Dá 👍 ou 👎 para o gerador aprender os teus gostos.</p>
+
+      <div class="gerador-opcoes">
+        <label>Estação:</label>
+        <div class="btn-group" id="geradorEstacao">
+          <button class="btn-toggle active" data-estacao="">Qualquer</button>
+          <button class="btn-toggle" data-estacao="primavera">🌸</button>
+          <button class="btn-toggle" data-estacao="verao">☀️</button>
+          <button class="btn-toggle" data-estacao="outono">🍂</button>
+          <button class="btn-toggle" data-estacao="inverno">❄️</button>
+        </div>
+      </div>
+      <div class="gerador-opcoes">
+        <label>Ocasião:</label>
+        <div class="btn-group" id="geradorFormalidade"></div>
+        <button class="btn btn-primary" id="btnGerar">✨ Gerar</button>
+      </div>
+
+      <div id="geradorResultado" style="display:none">
+        <div id="geradorManequim"></div>
+        <div class="explicacao" id="geradorExplicacao"></div>
+        <div class="gerador-acoes">
+          <button class="btn btn-secondary" id="btnGostei" title="Gosto — aprende com isto">👍 Gosto</button>
+          <button class="btn btn-secondary" id="btnNaoGostei" title="Não gosto — diz-me porquê">👎 Não gosto</button>
+          <button class="btn btn-success" id="btnGuardarOutfit">💾 Guardar outfit</button>
+          <button class="btn btn-primary" id="btnUsarHoje">📅 Usar hoje</button>
+        </div>
+      </div>
+      <div class="empty-state" id="geradorErro" style="display:none">
+        <div class="icon">😕</div>
+        <p id="geradorErroMsg"></p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= SEMANA ================= -->
+  <section class="view" id="view-semana">
+    <div class="toolbar">
+      <h2 class="toolbar-title">📆 Planeador da semana</h2>
+      <div class="btn-group" id="semanaFormalidade"></div>
+      <button class="btn btn-primary" id="btnGerarSemana">✨ Planear 7 dias</button>
+      <button class="btn btn-secondary" id="btnLimparSemana">🗑️ Limpar</button>
+    </div>
+    <p class="hint">Gera 7 outfits sem repetir peças — para não teres de pensar nisto de manhã.</p>
+    <div class="semana-grid" id="semanaGrid"></div>
+    <div class="empty-state" id="semanaVazia">
+      <div class="icon">📆</div>
+      <p>Sem plano para esta semana. Carrega em "Planear 7 dias".</p>
+    </div>
+  </section>
+
+  <!-- ================= ANÁLISE ================= -->
+  <section class="view" id="view-analise">
+    <nav class="subtabs">
+      <button class="subtab active" data-sub="stats">📊 Estatísticas</button>
+      <button class="subtab" data-sub="historico">🕘 Histórico</button>
+      <button class="subtab" data-sub="lacunas">🧠 Lacunas</button>
+      <button class="subtab" data-sub="capsula">🎯 Cápsula</button>
+      <button class="subtab" data-sub="mala">🧳 Mala</button>
+    </nav>
+
+    <!-- Estatísticas -->
+    <div class="subview active" id="sub-stats">
+      <div class="stats-grid" id="statsCards"></div>
+      <h3 class="sec-titulo">Cores do teu roupeiro</h3>
+      <div class="barras" id="statsCores"></div>
+      <h3 class="sec-titulo">Categorias</h3>
+      <div class="barras" id="statsCategorias"></div>
+      <h3 class="sec-titulo">💸 Custo por uso</h3>
+      <p class="hint">Preenche o preço nas peças para veres isto. Quanto mais baixo, melhor a compra.</p>
+      <div class="lista-stats" id="statsCusto"></div>
+      <h3 class="sec-titulo">😴 Peças adormecidas</h3>
+      <p class="hint">Nunca usadas ou paradas há muito tempo.</p>
+      <div class="grid" id="statsAdormecidas"></div>
+    </div>
+
+    <!-- Histórico -->
+    <div class="subview" id="sub-historico">
+      <div class="toolbar">
+        <button class="btn btn-secondary btn-sm" id="calAnterior">←</button>
+        <h3 class="toolbar-title" id="calTitulo" style="text-align:center"></h3>
+        <button class="btn btn-secondary btn-sm" id="calSeguinte">→</button>
+      </div>
+      <div class="calendario" id="calendario"></div>
+      <div id="calDetalhe"></div>
+    </div>
+
+    <!-- Lacunas (Roupeiro Contrafactual) -->
+    <div class="subview" id="sub-lacunas">
+      <h3 class="sec-titulo">🧠 O Roupeiro Contrafactual</h3>
+      <p class="hint">
+        Simulo peças que <b>não tens</b> e meço quantos outfits novos cada uma desbloquearia.
+        É o contrário do que uma loja te diria — aqui a resposta certa é muitas vezes "não compres nada".
+      </p>
+      <div class="gerador-opcoes">
+        <button class="btn btn-primary" id="btnCalcularLacunas">🔮 Calcular lacunas</button>
+        <span class="hint" id="lacunasBase"></span>
+      </div>
+      <div id="lacunasResultado"></div>
+      <h3 class="sec-titulo" id="orfasTitulo" style="display:none">🧩 Peças órfãs</h3>
+      <div class="grid" id="lacunasOrfas"></div>
+    </div>
+
+    <!-- Cápsula -->
+    <div class="subview" id="sub-capsula">
+      <h3 class="sec-titulo">🎯 Guarda-roupa cápsula</h3>
+      <p class="hint">O subconjunto mínimo de peças que cobre a maior parte dos teus outfits bons. O resto é peso morto.</p>
+      <div class="gerador-opcoes">
+        <label>Cobertura alvo:</label>
+        <div class="btn-group" id="capsulaAlvo">
+          <button class="btn-toggle" data-alvo="0.7">70%</button>
+          <button class="btn-toggle active" data-alvo="0.9">90%</button>
+          <button class="btn-toggle" data-alvo="1">100%</button>
+        </div>
+        <button class="btn btn-primary" id="btnCalcularCapsula">🎯 Calcular</button>
+      </div>
+      <div id="capsulaResultado"></div>
+    </div>
+
+    <!-- Mala -->
+    <div class="subview" id="sub-mala">
+      <h3 class="sec-titulo">🧳 Mala de viagem</h3>
+      <p class="hint">Mesmo motor da cápsula, mas limitado: o mínimo de peças para o máximo de dias sem repetir look.</p>
+      <div class="gerador-opcoes">
+        <label>Dias:</label>
+        <input type="number" id="malaDias" value="5" min="1" max="30" style="width:70px">
+        <label>Estação:</label>
+        <div class="btn-group" id="malaEstacao">
+          <button class="btn-toggle active" data-estacao="">Qualquer</button>
+          <button class="btn-toggle" data-estacao="primavera">🌸</button>
+          <button class="btn-toggle" data-estacao="verao">☀️</button>
+          <button class="btn-toggle" data-estacao="outono">🍂</button>
+          <button class="btn-toggle" data-estacao="inverno">❄️</button>
+        </div>
+      </div>
+      <div class="gerador-opcoes">
+        <label>Ocasiões:</label>
+        <div class="btn-group" id="malaFormalidade"></div>
+        <button class="btn btn-primary" id="btnCalcularMala">🧳 Fazer a mala</button>
+      </div>
+      <div id="malaResultado"></div>
+    </div>
+  </section>
+
+  <!-- ================= LAVANDARIA ================= -->
+  <section class="view" id="view-lavandaria">
+    <div class="toolbar">
+      <h2 class="toolbar-title">🧺 A lavar</h2>
+      <button class="btn btn-success" id="btnLavarTudo">✔ Tudo lavado</button>
+    </div>
+    <div class="grid" id="gridLavandaria"></div>
+    <div class="empty-state" id="lavandariaVazia" style="display:none">
+      <div class="icon">✨</div>
+      <p>Nada para lavar. Tudo limpo!</p>
+    </div>
+  </section>
+
+</main>
+
+<!-- ================= MODAL: ADICIONAR / EDITAR PEÇA ================= -->
+<div class="modal-overlay" id="modalPeca">
+  <div class="modal">
+    <h3 id="modalPecaTitulo">Adicionar peça</h3>
+
+    <div class="foto-zone" id="fotoZone">
+      <img id="fotoPreview" style="display:none" alt="foto da peça">
+      <div class="foto-placeholder" id="fotoPlaceholder">
+        <div class="icon">📷</div>
+        <p class="hide-sm">Clica, arrasta ou cola uma foto</p>
+        <p class="so-sm">Adiciona uma foto da peça</p>
+      </div>
+      <input type="file" id="fotoInput" accept="image/*">
+      <input type="file" id="fotoCamara" accept="image/*" capture="environment">
+      <button type="button" class="foto-trocar" id="btnTrocarFoto" style="display:none" title="Trocar foto">🔄</button>
+    </div>
+    <div class="foto-acoes">
+      <button type="button" class="btn btn-primary btn-sm" id="btnTirarFoto">📸 Tirar foto</button>
+      <button type="button" class="btn btn-secondary btn-sm" id="btnEscolherFoto">🖼️ Escolher da galeria</button>
+    </div>
+    <div class="foto-ferramentas" id="fotoFerramentas" style="display:none">
+      <button type="button" class="btn btn-secondary btn-sm" id="btnRemoverFundo">✂️ Remover fundo</button>
+      <button type="button" class="btn btn-secondary btn-sm" id="btnDetetarCor">🎨 Detetar cor</button>
+      <button type="button" class="btn btn-secondary btn-sm" id="btnReporFoto">↩️ Repor original</button>
+    </div>
+
+    <div class="form-row">
+      <label>Nome *</label>
+      <input type="text" id="fNome" placeholder="Ex: T-shirt branca básica">
+    </div>
+    <div class="form-row-2col">
+      <div class="form-row">
+        <label>Categoria *</label>
+        <select id="fCategoria"></select>
+      </div>
+      <div class="form-row">
+        <label>Cor principal <span class="cor-amostra" id="fCorAmostra"></span></label>
+        <select id="fCor"></select>
+      </div>
+    </div>
+    <div class="form-row">
+      <label>Formalidade</label>
+      <div class="btn-group" id="fFormalidade"></div>
+    </div>
+    <div class="form-row" id="linhaCamada">
+      <label>Camada <span class="hint-inline">— para vestires uma sweat por cima de uma t-shirt</span></label>
+      <div class="btn-group" id="fCamada"></div>
+    </div>
+    <div class="form-row">
+      <label>Estações</label>
+      <div class="btn-group" id="fEstacoes">
+        <button type="button" class="btn-toggle" data-estacao="primavera">🌸 Primavera</button>
+        <button type="button" class="btn-toggle" data-estacao="verao">☀️ Verão</button>
+        <button type="button" class="btn-toggle" data-estacao="outono">🍂 Outono</button>
+        <button type="button" class="btn-toggle" data-estacao="inverno">❄️ Inverno</button>
+      </div>
+    </div>
+    <div class="form-row-2col">
+      <div class="form-row">
+        <label>Preço (€) — opcional</label>
+        <input type="number" id="fPreco" placeholder="Ex: 29.90" step="0.01" min="0">
+      </div>
+      <div class="form-row">
+        <label>Data de compra — opcional</label>
+        <input type="date" id="fDataCompra">
+      </div>
+    </div>
+    <div class="form-row">
+      <label>Descrição</label>
+      <textarea id="fDescricao" rows="2" placeholder="Marca, tecido, notas..."></textarea>
+    </div>
+    <label class="check-row"><input type="checkbox" id="fFavorito"> ⭐ Peça favorita</label>
+
+    <div class="modal-actions">
+      <button class="btn btn-secondary" id="btnPecaCancelar">Cancelar</button>
+      <button class="btn btn-primary" id="btnPecaGuardar">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ================= MODAL: ADICIONAR EM LOTE ================= -->
+<div class="modal-overlay" id="modalLote">
+  <div class="modal modal-lg">
+    <h3>📥 Adicionar peças em lote</h3>
+    <p class="hint">Escolhe várias fotos de uma vez. A cor é detetada automaticamente — só tens de confirmar o nome e a categoria.</p>
+    <div class="foto-zone foto-zone-sm" id="loteZone">
+      <div class="foto-placeholder">
+        <div class="icon">🖼️</div>
+        <p>Clica ou arrasta várias fotos</p>
+      </div>
+      <input type="file" id="loteInput" accept="image/*" multiple>
+    </div>
+    <div id="loteLista" class="lote-lista"></div>
+    <div class="modal-actions">
+      <span class="hint" id="loteContagem" style="margin-right:auto"></span>
+      <button class="btn btn-secondary" id="btnLoteCancelar">Cancelar</button>
+      <button class="btn btn-primary" id="btnLoteGuardar">Guardar todas</button>
+    </div>
+  </div>
+</div>
+
+<!-- ================= MODAL: DETALHE DA PEÇA ================= -->
+<div class="modal-overlay" id="modalDetalhe">
+  <div class="modal">
+    <div class="detalhe-foto"><img id="dFoto" alt="foto da peça"></div>
+    <h3 id="dNome"></h3>
+    <div class="detalhe-chips" id="dChips"></div>
+    <p class="detalhe-descricao" id="dDescricao"></p>
+    <p class="detalhe-stats" id="dStats"></p>
+
+    <div class="modal-actions detalhe-acoes">
+      <button class="btn btn-secondary" id="btnDetalheEstado"></button>
+      <button class="btn btn-secondary" id="btnDetalheFavorito"></button>
+      <button class="btn btn-secondary" id="btnDetalheEditar">✏️ Editar</button>
+      <button class="btn btn-danger" id="btnDetalheEliminar">🗑️</button>
+      <button class="btn btn-secondary" id="btnDetalheFechar">Fechar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ================= MODAL: CRIAR OUTFIT / ESCOLHER PEÇAS ================= -->
+<div class="modal-overlay" id="modalOutfit">
+  <div class="modal modal-lg">
+    <h3 id="modalOutfitTitulo">Criar outfit</h3>
+    <div class="form-row">
+      <label>Nome do outfit</label>
+      <input type="text" id="oNome" placeholder="Ex: Casual sexta-feira">
+    </div>
+    <p class="hint">Seleciona as peças (clica para marcar):</p>
+    <div class="grid grid-picker" id="gridPicker"></div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" id="btnOutfitCancelar">Cancelar</button>
+      <button class="btn btn-primary" id="btnOutfitGuardar">Guardar outfit</button>
+    </div>
+  </div>
+</div>
+
+<!-- ================= MODAL: ESCOLHER OUTFIT PARA HOJE ================= -->
+<div class="modal-overlay" id="modalEscolherOutfit">
+  <div class="modal modal-lg">
+    <h3>Escolher outfit para hoje</h3>
+    <div class="outfits-lista" id="listaEscolherOutfit"></div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" id="btnEscolherCancelar">Cancelar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ================= MODAL: FEEDBACK 👎 ================= -->
+<div class="modal-overlay" id="modalFeedback">
+  <div class="modal">
+    <h3>👎 O que é que não gostaste?</h3>
+    <p class="hint">Quanto mais preciso fores, melhor o gerador fica. Um "não gosto" vago castiga peças boas.</p>
+    <div class="feedback-opcoes" id="feedbackOpcoes"></div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" id="btnFeedbackCancelar">Cancelar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ================= MODAL: DEFINIÇÕES / BACKUP ================= -->
+<div class="modal-overlay" id="modalDefinicoes">
+  <div class="modal">
+    <h3>⚙️ Definições</h3>
+
+    <h4 class="sec-titulo-sm">👥 Contas</h4>
+    <p class="hint">Várias pessoas na mesma app, cada uma com o seu roupeiro encriptado.</p>
+    <div class="def-linha">
+      <button class="btn btn-secondary" id="btnGerirPerfis">👥 Gerir contas e palavras-passe</button>
+    </div>
+
+    <h4 class="sec-titulo-sm">☁️ Sincronização</h4>
+    <p class="hint">Usar o mesmo roupeiro no telemóvel e no computador. Opcional, cifrado ponta-a-ponta.</p>
+    <div class="def-linha">
+      <button class="btn btn-secondary" id="btnNuvem">☁️ Sincronizar entre dispositivos</button>
+    </div>
+
+    <h4 class="sec-titulo-sm">🔒 Privacidade</h4>
+    <p class="hint">
+      Sem sincronização ativa, esta app não faz um único pedido à internet: tudo — fotos incluídas —
+      vive neste dispositivo. Com um perfil protegido, fica também <b>encriptado</b> em disco.
+      O maior risco continua a não ser alguém espiar: é <b>perderes tudo se limpares os dados do browser</b>.
+    </p>
+
+    <h4 class="sec-titulo-sm">💾 Backup</h4>
+    <div class="def-linha">
+      <button class="btn btn-primary" id="btnExportar">⬇️ Exportar tudo (JSON)</button>
+      <button class="btn btn-secondary" id="btnImportar">⬆️ Importar backup</button>
+      <input type="file" id="importInput" accept="application/json,.json" style="display:none">
+    </div>
+
+    <h4 class="sec-titulo-sm">🗄️ Espaço usado</h4>
+    <div class="quota-barra"><div id="quotaFill"></div></div>
+    <p class="hint" id="quotaTexto">A calcular...</p>
+    <div class="def-linha">
+      <button class="btn btn-secondary btn-sm" id="btnPersistir">🔐 Proteger dados</button>
+      <span class="hint" id="persistEstado"></span>
+    </div>
+
+    <h4 class="sec-titulo-sm">🎨 Aparência</h4>
+    <div class="btn-group" id="temaOpcoes">
+      <button class="btn-toggle" data-tema="auto">🖥️ Automático</button>
+      <button class="btn-toggle" data-tema="claro">☀️ Claro</button>
+      <button class="btn-toggle" data-tema="escuro">🌙 Escuro</button>
+    </div>
+
+    <h4 class="sec-titulo-sm" style="color:var(--danger)">⚠️ Zona perigosa</h4>
+    <div class="def-linha">
+      <button class="btn btn-danger btn-sm" id="btnApagarTudo">🗑️ Apagar tudo</button>
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn btn-secondary" id="btnDefFechar">Fechar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ================= NAVEGAÇÃO DE TELEMÓVEL ================= -->
+<nav class="bottom-nav" aria-label="Navegação principal">
+  <button class="tab active" data-view="hoje"><span class="ico">📅</span><span class="lbl">Hoje</span></button>
+  <button class="tab" data-view="biblioteca"><span class="ico">🗂️</span><span class="lbl">Peças</span></button>
+  <button class="tab" data-view="outfits"><span class="ico">👔</span><span class="lbl">Outfits</span></button>
+  <button class="tab" data-view="gerador"><span class="ico">✨</span><span class="lbl">Gerar</span></button>
+  <button class="tab" data-view="semana"><span class="ico">📆</span><span class="lbl">Semana</span></button>
+  <button class="tab" data-view="analise"><span class="ico">🧠</span><span class="lbl">Análise</span></button>
+  <button class="tab" data-view="lavandaria">
+    <span class="ico">🧺<span class="badge badge-lav" style="display:none">0</span></span>
+    <span class="lbl">Lavar</span>
+  </button>
+</nav>
+
+<!-- ================= MODAL: PERFIS ================= -->
+<div class="modal-overlay" id="modalPerfis">
+  <div class="modal">
+    <h3>👥 Contas</h3>
+    <p class="hint">Cada conta tem o seu roupeiro, encriptado com a sua própria palavra-passe. Uma conta nunca consegue ler os dados de outra.</p>
+    <div class="lista-gestao" id="listaGestaoPerfis"></div>
+    <div class="modal-actions">
+      <button class="btn btn-primary" id="btnNovoPerfil" style="margin-right:auto">+ Nova conta</button>
+      <button class="btn btn-secondary" id="btnPerfisFechar">Fechar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ================= MODAL: NOVO PERFIL ================= -->
+<div class="modal-overlay" id="modalNovoPerfil">
+  <div class="modal">
+    <h3>Nova conta</h3>
+    <div class="form-row">
+      <label>Nome</label>
+      <input type="text" id="npNome" placeholder="Ex: Maria" autocomplete="off">
+    </div>
+    <div class="form-row">
+      <label>Email * <span class="hint-inline">— é com ele que entras noutro dispositivo</span></label>
+      <input type="email" id="npEmail" placeholder="tu@exemplo.com" autocomplete="username">
+    </div>
+    <div class="form-row">
+      <label>Avatar</label>
+      <div class="emoji-grelha" id="npEmoji"></div>
+    </div>
+    <div class="form-row">
+      <label>Palavra-passe * <span class="hint-inline">— encripta tudo e serve para entrar</span></label>
+      <input type="password" id="npSenha" placeholder="Mínimo 8 caracteres" required autocomplete="new-password">
+      <div class="forca-barra"><div id="npForca"></div></div>
+      <span class="forca-texto" id="npForcaTexto"></span>
+    </div>
+    <div class="form-row">
+      <label>Repetir palavra-passe</label>
+      <input type="password" id="npSenha2" autocomplete="new-password">
+    </div>
+    <button class="btn btn-secondary btn-sm" id="btnNpSugerir">🎲 Sugerir frase-passe forte</button>
+    <p class="hint" style="margin-top:14px">
+      ⚠️ <b>Não há recuperação.</b> Se esqueceres a palavra-passe, os dados deste perfil ficam
+      ilegíveis para sempre. É esse o preço de ninguém além de ti os conseguir ler.
+      Noutro dispositivo entras com <b>este email e esta palavra-passe</b> — mais nada.
+    </p>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" id="btnNpCancelar">Cancelar</button>
+      <button class="btn btn-primary" id="btnNpCriar">Criar conta</button>
+    </div>
+  </div>
+</div>
+
+<!-- ================= MODAL: MUDAR PALAVRA-PASSE ================= -->
+<div class="modal-overlay" id="modalSenha">
+  <div class="modal">
+    <h3 id="msTitulo">Palavra-passe</h3>
+    <p class="hint" id="msExplica"></p>
+    <div class="form-row">
+      <label>Nova palavra-passe</label>
+      <input type="password" id="msSenha" autocomplete="new-password">
+      <div class="forca-barra"><div id="msForca"></div></div>
+      <span class="forca-texto" id="msForcaTexto"></span>
+    </div>
+    <div class="form-row">
+      <label>Repetir</label>
+      <input type="password" id="msSenha2" autocomplete="new-password">
+    </div>
+    <div class="modal-actions">
+      
+      <button class="btn btn-secondary" id="btnMsCancelar">Cancelar</button>
+      <button class="btn btn-primary" id="btnMsGuardar">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ================= MODAL: NUVEM ================= -->
+<div class="modal-overlay" id="modalNuvem">
+  <div class="modal modal-lg">
+    <h3>☁️ Sincronizar entre dispositivos</h3>
+    <div id="nvEstado" style="margin-bottom:14px"></div>
+
+    <p class="hint">
+      Opcional e desligada por omissão. Quando ativas, o teu roupeiro é <b>cifrado neste dispositivo</b>
+      e só depois enviado. O servidor guarda um bloco de texto que não consegue ler — nem peças, nem fotos, nem nomes.
+    </p>
+
+    <details id="nvPassoConfig">
+      <summary class="sec-titulo-sm" style="cursor:pointer">⚙️ Configuração inicial (uma vez só)</summary>
+      <ol class="passos">
+        <li>Cria conta grátis em <b>supabase.com</b> e um projeto novo.</li>
+        <li>No projeto: <b>SQL Editor</b> → cola e corre o bloco abaixo.</li>
+        <li>Em <b>Project Settings → API</b>, copia o <b>Project URL</b> e a chave <b>anon public</b>.</li>
+        <li>Cola-as nos campos aqui em baixo.</li>
+      </ol>
+      <pre class="sql"><code>create table roupeiros (
+  user_id uuid not null default auth.uid()
+    references auth.users on delete cascade,
+  perfil text not null,
+  nome text, emoji text,
+  salt text not null,
+  iteracoes int not null default 600000,
+  verificador jsonb not null,
+  blob text not null,
+  versao int not null default 1,
+  atualizado timestamptz not null default now(),
+  primary key (user_id, perfil)
+);
+
+alter table roupeiros enable row level security;
+
+create policy "so o dono le"     on roupeiros for select
+  using (auth.uid() = user_id);
+create policy "so o dono insere" on roupeiros for insert
+  with check (auth.uid() = user_id);
+create policy "so o dono altera" on roupeiros for update
+  using (auth.uid() = user_id);
+create policy "so o dono apaga"  on roupeiros for delete
+  using (auth.uid() = user_id);</code></pre>
+      <p class="hint">As políticas acima garantem, do lado do servidor, que ninguém lê as linhas de outra pessoa — mesmo com a chave anon, que é pública por design.</p>
+      <div class="form-row">
+        <label>Project URL</label>
+        <input type="text" id="nvUrl" placeholder="https://xxxxx.supabase.co" autocomplete="off">
+      </div>
+      <div class="form-row">
+        <label>Chave anon public</label>
+        <input type="text" id="nvChave" placeholder="eyJhbGciOi..." autocomplete="off">
+      </div>
+      <button class="btn btn-primary btn-sm" id="btnNvGuardarCfg">Guardar ligação</button>
+      <p class="hint" style="margin-top:12px">
+        Para não teres de fazer isto em cada dispositivo, escreve o URL e a chave em
+        <b>NUVEM_PADRAO</b>, no topo de <code>nuvem.js</code>: aí qualquer dispositivo que abra
+        a app já vem ligado.
+      </p>
+    </details>
+
+    <div id="nvSecaoConta" style="display:none">
+      <h4 class="sec-titulo-sm">👤 Conta</h4>
+      <p class="hint">
+        Normalmente não precisas de mexer aqui: a sessão abre sozinha quando entras com
+        o email e a palavra-passe da tua conta. Isto é a rede de segurança para quando falha.
+      </p>
+      <div class="form-row-2col">
+        <div class="form-row">
+          <label>Email</label>
+          <input type="email" id="nvEmail" autocomplete="username">
+        </div>
+        <div class="form-row">
+          <label>Palavra-passe</label>
+          <input type="password" id="nvSenhaConta" autocomplete="current-password">
+        </div>
+      </div>
+      <div class="def-linha">
+        <button class="btn btn-primary btn-sm" id="btnNvEntrar">Entrar</button>
+        <button class="btn btn-secondary btn-sm" id="btnNvRegistar">Criar conta</button>
+        <button class="btn btn-secondary btn-sm" id="btnNvSair">Sair</button>
+      </div>
+    </div>
+
+    <div id="nvSecaoSync" style="display:none">
+      <h4 class="sec-titulo-sm">🔄 Sincronizar</h4>
+      <p class="hint" id="nvAvisoCifra" style="display:none;color:var(--warning)">
+        ⚠️ Este perfil não tem palavra-passe, por isso não posso cifrar nada. Protege-o primeiro
+        (Definições → Perfis → 🔑) — não envio dados em claro para servidor nenhum.
+      </p>
+      <div class="def-linha">
+        <button class="btn btn-primary" id="btnNvEnviar">⬆️ Enviar este perfil</button>
+        <button class="btn btn-secondary" id="btnNvListar">⬇️ Ver o que está na nuvem</button>
+      </div>
+      <div class="lista-gestao" id="nvRemotos"></div>
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn btn-secondary" id="btnNuvemFechar">Fechar</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"><span id="toastMsg"></span><button class="toast-undo" id="toastUndo">Anular</button></div>
+
+<script src="seguranca.js"></script>
+<script src="perfis.js"></script>
+<script src="nuvem.js"></script>
+<script src="conta.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
