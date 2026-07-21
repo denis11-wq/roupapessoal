@@ -328,9 +328,12 @@ function ligarEventos() {
   $('fotoInput').addEventListener('click', e => e.stopPropagation());
   $('fotoCamara').addEventListener('click', e => e.stopPropagation());
   $('fotoInput').addEventListener('change', e => e.target.files[0] && carregarFoto(e.target.files[0]));
-  // câmara: input separado com capture, senão o telemóvel abre sempre a galeria
+  // câmara: input separado com capture, usado só se o getUserMedia não existir
   $('fotoCamara').addEventListener('change', e => e.target.files[0] && carregarFoto(e.target.files[0]));
-  $('btnTirarFoto').addEventListener('click', () => $('fotoCamara').click());
+  $('btnTirarFoto').addEventListener('click', abrirCamara);
+  $('btnCamaraDisparar').addEventListener('click', dispararCamara);
+  $('btnCamaraTrocar').addEventListener('click', trocarLenteCamara);
+  $('btnCamaraCancelar').addEventListener('click', fecharCamara);
   $('btnEscolherFoto').addEventListener('click', () => $('fotoInput').click());
   $('btnTrocarFoto').addEventListener('click', e => { e.stopPropagation(); $('fotoInput').click(); });
   zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('dragover'); });
@@ -417,11 +420,11 @@ function ligarEventos() {
   document.querySelectorAll('.modal-overlay').forEach(m =>
     // "sem-fechar": passos obrigatórios (definir palavra-passe) não se fecham por engano
     m.addEventListener('click', e => {
-      if (e.target === m && !m.classList.contains('sem-fechar')) m.classList.remove('aberto');
+      if (e.target === m && !m.classList.contains('sem-fechar')) esconderOverlay(m);
     }));
   document.addEventListener('keydown', e => {
     if (e.key === 'Escape') document.querySelectorAll('.modal-overlay.aberto:not(.sem-fechar)')
-      .forEach(m => m.classList.remove('aberto'));
+      .forEach(esconderOverlay);
   });
 }
 
@@ -439,7 +442,13 @@ function valorGrupo(id) {
 
 function mudarTab(nome) { document.querySelector(`.tab[data-view="${nome}"]`).click(); }
 function abrirModal(id) { $(id).classList.add('aberto'); }
-function fecharModal(id) { $(id).classList.remove('aberto'); }
+function fecharModal(id) { esconderOverlay($(id)); }
+
+// fechar por Esc ou clique fora não pode deixar a câmara ligada
+function esconderOverlay(m) {
+  m.classList.remove('aberto');
+  if (m.id === 'modalCamara') pararStream();
+}
 
 function toast(msg, aoAnular) {
   const t = $('toast');
@@ -504,6 +513,80 @@ async function carregarFoto(file) {
   } catch {
     toast('⚠️ Não consegui ler essa imagem');
   }
+}
+
+// ---------- câmara ao vivo ----------
+// O input com capture="environment" é ignorado no desktop (abre o seletor de
+// ficheiros = "a galeria") e falha em várias WebViews. Quando há getUserMedia
+// abrimos a câmara dentro da app; o input fica como plano B.
+let camaraStream = null;
+let camaraLente = 'environment';
+
+function temGetUserMedia() {
+  return !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+}
+
+async function abrirCamara() {
+  if (!temGetUserMedia()) { $('fotoCamara').click(); return; }
+  abrirModal('modalCamara');
+  const ok = await ligarStream(camaraLente);
+  if (!ok) { fecharCamara(); $('fotoCamara').click(); }
+}
+
+async function ligarStream(lente) {
+  pararStream();
+  const v = $('camaraVideo');
+  try {
+    camaraStream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: lente }, width: { ideal: 1280 }, height: { ideal: 1280 } },
+      audio: false,
+    });
+  } catch (err) {
+    // permissão negada é do utilizador; o resto é falta de câmara/contexto inseguro
+    toast(err && err.name === 'NotAllowedError'
+      ? '🚫 Permissão da câmara negada'
+      : '📷 Sem câmara disponível — escolhe uma foto');
+    return false;
+  }
+  camaraLente = lente;
+  v.srcObject = camaraStream;
+  v.classList.toggle('espelhado', lente === 'user');
+  try { await v.play(); } catch { /* alguns browsers já arrancaram sozinhos */ }
+  return true;
+}
+
+function pararStream() {
+  if (camaraStream) camaraStream.getTracks().forEach(t => t.stop());
+  camaraStream = null;
+  $('camaraVideo').srcObject = null;
+}
+
+function fecharCamara() {
+  pararStream();
+  fecharModal('modalCamara');
+}
+
+function trocarLenteCamara() {
+  ligarStream(camaraLente === 'environment' ? 'user' : 'environment');
+}
+
+async function dispararCamara() {
+  const v = $('camaraVideo');
+  const w = v.videoWidth, h = v.videoHeight;
+  if (!w || !h) { toast('⏳ A câmara ainda está a arrancar'); return; }
+  const esc = Math.min(1, FOTO_MAX / Math.max(w, h));
+  const cv = document.createElement('canvas');
+  cv.width = Math.round(w * esc);
+  cv.height = Math.round(h * esc);
+  const ctx = cv.getContext('2d');
+  if (camaraLente === 'user') { ctx.translate(cv.width, 0); ctx.scale(-1, 1); }  // desespelhar
+  ctx.drawImage(v, 0, 0, cv.width, cv.height);
+  fecharCamara();
+  fotoAtual = cv.toDataURL(TIPO_FOTO, 0.82);
+  fotoOriginal = fotoAtual;
+  fotoRecortada = false;
+  mostrarFotoNoModal();
+  await detetarCorNoModal(false);
 }
 
 function mostrarFotoNoModal() {

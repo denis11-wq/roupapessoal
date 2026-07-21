@@ -956,6 +956,22 @@ input[type=checkbox] { accent-color: var(--accent); width: 17px; height: 17px; }
 .foto-zone input[type=file] { display: none; }
 .foto-ferramentas { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 18px; }
 
+/* ===================== CÂMARA ===================== */
+.modal-camara { max-width: 560px; }
+.camara-palco {
+  background: #000;
+  border-radius: var(--r-lg);
+  overflow: hidden;
+  margin-bottom: 12px;
+  aspect-ratio: 3 / 4;
+  max-height: 60vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.camara-palco video { width: 100%; height: 100%; object-fit: contain; }
+.camara-palco video.espelhado { transform: scaleX(-1); }
+
 /* tirar foto / escolher da galeria */
 .foto-acoes { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
 .foto-acoes .btn { flex: 1; min-width: 140px; }
