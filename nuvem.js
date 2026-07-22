@@ -190,17 +190,33 @@ const Nuvem = {
 // Guardar uma peça marca o perfil como sujo e agenda um envio daí a 25 s.
 Nuvem.temporizador = null;
 Nuvem.aSincronizar = false;
+Nuvem.porReagendar = false;
+// Durante uma importação (backup ou descarga da nuvem) cada escrita passaria por
+// aqui e marcaria o perfil como "tem alterações locais por enviar" — exatamente o
+// contrário do que acabou de acontecer. Este interruptor cala o automatismo.
+Nuvem.silencio = false;
+Nuvem.semSincronizar = async function (fn) {
+  Nuvem.silencio = true;
+  try { return await fn(); }
+  finally { Nuvem.silencio = false; }
+};
 Nuvem.agendar = function () {
+  if (Nuvem.silencio) return;
   // marca-se sempre, mesmo sem nuvem ligada: se ligares mais tarde, eu sei que
   // este dispositivo tem alterações que ainda não subiram
   if (Perfis.atual) Nuvem.marcarPendente(Perfis.atual.id);
-  if (!Nuvem.ligada() || !Perfis.chave || !Perfis.atual || Nuvem.aSincronizar) return;
+  if (!Nuvem.ligada() || !Perfis.chave || !Perfis.atual) return;
+  // alterações feitas a meio de um envio ficariam por subir até à próxima
+  // alteração: em vez disso, reagenda-se assim que este envio termine
+  if (Nuvem.aSincronizar) { Nuvem.porReagendar = true; return; }
   clearTimeout(Nuvem.temporizador);
   Nuvem.temporizador = setTimeout(() => Nuvem.sincronizarAgora(true), 25000);
 };
 Nuvem.sincronizarAgora = async function (silencioso) {
   if (!Nuvem.ligada() || !Perfis.chave || Nuvem.aSincronizar) return;
+  clearTimeout(Nuvem.temporizador);
   Nuvem.aSincronizar = true;                       // evita que o próprio envio se reagende
+  Nuvem.porReagendar = false;
   try {
     const r = await Nuvem.enviar(Perfis.atual, false);
     if (r.conflito) { if (!silencioso) toast('⚠️ A nuvem tem uma versão mais recente — abre ⚙️ → ☁️'); }
@@ -211,6 +227,7 @@ Nuvem.sincronizarAgora = async function (silencioso) {
     else marcarEstadoNuvem('erro');
   } finally {
     Nuvem.aSincronizar = false;
+    if (Nuvem.porReagendar) { Nuvem.porReagendar = false; Nuvem.agendar(); }
   }
 };
 

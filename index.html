@@ -42,7 +42,7 @@
 
     <!-- escolher perfil -->
     <div id="painelPerfis">
-      <p class="hint">Escolhe a tua conta para entrar.</p>
+      <p class="hint" id="perfisHint">Escolhe a tua conta para entrar.</p>
       <div class="lista-perfis" id="listaPerfis"></div>
       <button class="btn btn-secondary" id="btnNovoPerfilBloqueio">+ Criar conta nova</button>
       <button class="btn btn-secondary" id="btnEntrarNuvem">☁️ Já uso isto noutro dispositivo</button>
@@ -218,7 +218,7 @@
     <div class="semana-grid" id="semanaGrid"></div>
     <div class="empty-state" id="semanaVazia">
       <div class="icon">📆</div>
-      <p>Sem plano para esta semana. Carrega em "Planear 7 dias".</p>
+      <p id="semanaVaziaMsg">Sem plano para esta semana. Carrega em "Planear 7 dias".</p>
     </div>
   </section>
 
@@ -293,24 +293,30 @@
     <!-- Mala -->
     <div class="subview" id="sub-mala">
       <h3 class="sec-titulo">🧳 Mala de viagem</h3>
-      <p class="hint">Mesmo motor da cápsula, mas limitado: o mínimo de peças para o máximo de dias sem repetir look.</p>
-      <div class="gerador-opcoes">
-        <label>Dias:</label>
-        <input type="number" id="malaDias" value="5" min="1" max="30" style="width:70px">
-        <label>Estação:</label>
-        <div class="btn-group" id="malaEstacao">
-          <button class="btn-toggle active" data-estacao="">Qualquer</button>
-          <button class="btn-toggle" data-estacao="primavera">🌸</button>
-          <button class="btn-toggle" data-estacao="verao">☀️</button>
-          <button class="btn-toggle" data-estacao="outono">🍂</button>
-          <button class="btn-toggle" data-estacao="inverno">❄️</button>
+      <p class="hint">O teu organizador de férias. Junta roupa e essenciais, e vai marcando o que já meteste na mala — fica tudo guardado até à próxima viagem.</p>
+
+      <div class="mala-topo">
+        <input type="text" id="malaDestino" class="mala-destino" placeholder="✈️ Para onde vais? (ex: Algarve)" maxlength="40">
+        <div class="gerador-opcoes">
+          <label>Dias:</label>
+          <input type="number" id="malaDias" value="5" min="1" max="30" style="width:64px">
+          <label>Estação:</label>
+          <div class="btn-group" id="malaEstacao">
+            <button class="btn-toggle active" data-estacao="">Qualquer</button>
+            <button class="btn-toggle" data-estacao="primavera">🌸</button>
+            <button class="btn-toggle" data-estacao="verao">☀️</button>
+            <button class="btn-toggle" data-estacao="outono">🍂</button>
+            <button class="btn-toggle" data-estacao="inverno">❄️</button>
+          </div>
+        </div>
+        <div class="gerador-opcoes mala-acoes">
+          <button class="btn btn-primary" id="btnSugerirMala">✨ Sugerir roupa</button>
+          <button class="btn btn-secondary" id="btnAddRoupaMala">👕 Escolher roupa</button>
+          <button class="btn btn-secondary" id="btnAddExtraMala">🧴 Essenciais</button>
+          <button class="btn btn-danger btn-sm" id="btnLimparMala">🗑️ Esvaziar</button>
         </div>
       </div>
-      <div class="gerador-opcoes">
-        <label>Ocasiões:</label>
-        <div class="btn-group" id="malaFormalidade"></div>
-        <button class="btn btn-primary" id="btnCalcularMala">🧳 Fazer a mala</button>
-      </div>
+
       <div id="malaResultado"></div>
     </div>
   </section>
@@ -489,6 +495,38 @@
     <div class="outfits-lista" id="listaEscolherOutfit"></div>
     <div class="modal-actions">
       <button class="btn btn-secondary" id="btnEscolherCancelar">Cancelar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ================= MODAL: ESCOLHER ROUPA PARA A MALA ================= -->
+<div class="modal-overlay" id="modalMalaRoupa">
+  <div class="modal modal-lg">
+    <h3>👕 Escolher roupa para a mala</h3>
+    <p class="hint">Clica nas peças que queres levar. As que já estão na mala aparecem marcadas.</p>
+    <div class="grid grid-picker" id="malaGridPicker"></div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" id="btnMalaRoupaCancelar">Cancelar</button>
+      <button class="btn btn-primary" id="btnMalaRoupaGuardar">Adicionar à mala</button>
+    </div>
+  </div>
+</div>
+
+<!-- ================= MODAL: ESSENCIAIS DA MALA ================= -->
+<div class="modal-overlay" id="modalMalaExtras">
+  <div class="modal">
+    <h3>🧴 Essenciais da viagem</h3>
+    <div class="form-row">
+      <label>Adicionar item personalizado</label>
+      <div class="mala-add-custom">
+        <input type="text" id="malaExtraInput" placeholder="Ex: Carregador da câmara" maxlength="40">
+        <button class="btn btn-primary" id="btnMalaExtraAdd">➕</button>
+      </div>
+    </div>
+    <p class="hint">Ou toca nos essenciais para os juntar (ou tirar) da mala:</p>
+    <div id="malaCatalogo"></div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" id="btnMalaExtrasFechar">Concluído</button>
     </div>
   </div>
 </div>

@@ -41,6 +41,16 @@ const FORMALIDADES = [
 const DIAS_SEMANA = ['Domingo','Segunda','Terça','Quarta','Quinta','Sexta','Sábado'];
 const LIMIAR_NUCLEO = 0.5; // acima disto, uma combinação cima+baixo conta como "outfit válido"
 
+// catálogo de essenciais não-roupa que a mala sugere por grupos
+const MALA_ESSENCIAIS = [
+  { grupo: 'Documentos', emoji: '📄', itens: ['Passaporte / BI', 'Bilhetes e reservas', 'Carta de condução', 'Seguro de viagem', 'Dinheiro e cartões'] },
+  { grupo: 'Higiene',    emoji: '🧴', itens: ['Escova e pasta de dentes', 'Desodorizante', 'Champô e gel de banho', 'Protetor solar', 'Escova de cabelo'] },
+  { grupo: 'Tecnologia', emoji: '🔌', itens: ['Carregador do telemóvel', 'Powerbank', 'Adaptador de tomadas', 'Auriculares'] },
+  { grupo: 'Saúde',      emoji: '💊', itens: ['Medicamentos habituais', 'Comprimidos para dores', 'Pensos rápidos', 'Repelente de insetos'] },
+  { grupo: 'Extras',     emoji: '🎒', itens: ['Óculos de sol', 'Fato de banho', 'Chinelos', 'Garrafa de água', 'Saco para roupa suja'] },
+];
+const MALA_GRUPO_EMOJI = Object.fromEntries(MALA_ESSENCIAIS.map(g => [g.grupo, g.emoji]));
+
 const cat = id => CATEGORIAS.find(c => c.id === id) || CATEGORIAS[0];
 const form = n => FORMALIDADES[Math.max(0, Math.min(3, n ?? 1))];
 const hojeStr = () => dataStr(new Date());
@@ -131,18 +141,24 @@ const DB = {
         gostos: await DB.metaGet('gostos'),
         hoje: await DB.metaGet('hoje'),
         semana: await DB.metaGet('semana'),
+        mala: await DB.metaGet('mala'),
       },
     };
   },
-  async importarBruto(d) {
-    await DB.limpar('itens'); await DB.limpar('outfits'); await DB.limpar('historico');
-    for (const i of (d.itens || [])) await DB.por('itens', i);
-    for (const o of (d.outfits || [])) await DB.por('outfits', o);
-    for (const h of (d.historico || [])) await DB.por('historico', h);
-    const m = d.meta || {};
-    await DB.por('meta', m.gostos || { scores: {}, pares: {} }, 'gostos');
-    await DB.por('meta', m.hoje || null, 'hoje');
-    await DB.por('meta', m.semana || null, 'semana');
+  // O silêncio evita que reescrever a base inteira seja lido como "este
+  // dispositivo tem alterações locais" e dispare um envio do que acabou de chegar.
+  importarBruto(d) {
+    return Nuvem.semSincronizar(async () => {
+      await DB.limpar('itens'); await DB.limpar('outfits'); await DB.limpar('historico');
+      for (const i of (d.itens || [])) await DB.por('itens', i);
+      for (const o of (d.outfits || [])) await DB.por('outfits', o);
+      for (const h of (d.historico || [])) await DB.por('historico', h);
+      const m = d.meta || {};
+      await DB.por('meta', m.gostos || { scores: {}, pares: {} }, 'gostos');
+      await DB.por('meta', m.hoje || null, 'hoje');
+      await DB.por('meta', m.semana || null, 'semana');
+      await DB.por('meta', m.mala || null, 'mala');
+    });
   },
 };
 
@@ -152,6 +168,7 @@ let outfits = [];
 let historico = [];                    // [{ data, pecas:[ids], nome }]
 let hoje = null;                       // { data, pecas: [ids] }
 let semana = null;                     // { criado, dias:[{data, pecas:[ids]}] }
+let mala = null;                       // { destino, dias, estacao, pecas:[{id,feito}], extras:[{id,nome,grupo,feito}] }
 let gostos = { scores: {}, pares: {} };// aprendizagem do gerador
 let outfitGerado = null;               // ids da última proposta do gerador
 let razoesGeradas = [];                // explicação da última proposta
@@ -205,10 +222,13 @@ async function entrarNoPerfil(perfil) {
 
 async function recarregarDados() {
   itens = (await DB.todos('itens')).map(normalizarItem);
-  outfits = await DB.todos('outfits');
-  historico = (await DB.todos('historico')).sort((a, b) => a.data.localeCompare(b.data));
+  outfits = (await DB.todos('outfits')).filter(o => o && o.id && Array.isArray(o.pecas));
+  historico = (await DB.todos('historico'))
+    .filter(h => h && h.data && Array.isArray(h.pecas))
+    .sort((a, b) => a.data.localeCompare(b.data));
   hoje = (await DB.metaGet('hoje')) || null;
   semana = (await DB.metaGet('semana')) || null;
+  mala = normalizarMala(await DB.metaGet('mala'));
   gostos = (await DB.metaGet('gostos')) || { scores: {}, pares: {} };
   if (hoje && hoje.data !== hojeStr()) { hoje = null; await DB.por('meta', null, 'hoje'); }
 }
@@ -216,7 +236,7 @@ async function recarregarDados() {
 function trancarApp() {
   Perfis.trancar();
   DB.fechar();
-  itens = []; outfits = []; historico = []; hoje = null; semana = null;
+  itens = []; outfits = []; historico = []; hoje = null; semana = null; mala = null;
   gostos = { scores: {}, pares: {} };
   // trancar tem de apagar mesmo o que está no ecrã: a proposta do gerador e o
   // dia aberto no histórico ficavam visíveis por baixo do ecrã de bloqueio
@@ -270,7 +290,6 @@ function preencherSelects() {
     `<button type="button" class="btn-toggle" data-f="${c.id}" title="${c.desc}">${c.emoji} ${c.nome}</button>`).join('');
   $('geradorFormalidade').innerHTML = botoesForm(true);
   $('semanaFormalidade').innerHTML = botoesForm(true);
-  $('malaFormalidade').innerHTML = botoesForm(true);
 }
 
 function renderTudo() {
@@ -281,6 +300,7 @@ function renderTudo() {
   renderSemana();
   renderStats();
   renderCalendario();
+  renderMala();
 }
 
 // ---------- Tema ----------
@@ -439,8 +459,33 @@ function ligarEventos() {
   ligarGrupoExclusivo('capsulaAlvo');
   $('btnCalcularCapsula').addEventListener('click', renderCapsula);
   ligarGrupoExclusivo('malaEstacao');
-  ligarGrupoExclusivo('malaFormalidade');
-  $('btnCalcularMala').addEventListener('click', renderMala);
+  $('malaEstacao').querySelectorAll('.btn-toggle').forEach(b => b.addEventListener('click', () => {
+    if (!mala) mala = malaNova();
+    mala.estacao = b.dataset.estacao || '';
+    guardarMala(); renderMala();
+  }));
+  $('malaDestino').addEventListener('change', () => {
+    if (!mala) mala = malaNova();
+    mala.destino = ($('malaDestino').value || '').slice(0, 40);
+    guardarMala(); renderMala();
+  });
+  $('malaDias').addEventListener('change', () => {
+    if (!mala) mala = malaNova();
+    mala.dias = Math.max(1, Math.min(30, Number($('malaDias').value) || 5));
+    $('malaDias').value = mala.dias;
+    guardarMala(); renderMala();
+  });
+  $('btnSugerirMala').addEventListener('click', sugerirRoupaMala);
+  $('btnAddRoupaMala').addEventListener('click', abrirMalaRoupa);
+  $('btnAddExtraMala').addEventListener('click', abrirMalaExtras);
+  $('btnLimparMala').addEventListener('click', limparMala);
+  $('btnMalaRoupaCancelar').addEventListener('click', () => fecharModal('modalMalaRoupa'));
+  $('btnMalaRoupaGuardar').addEventListener('click', guardarMalaRoupa);
+  $('btnMalaExtrasFechar').addEventListener('click', () => fecharModal('modalMalaExtras'));
+  $('btnMalaExtraAdd').addEventListener('click', adicionarExtraCustom);
+  $('malaExtraInput').addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); adicionarExtraCustom(); }
+  });
 
   // Lavandaria
   $('btnLavarTudo').addEventListener('click', lavarTudo);
@@ -1657,7 +1702,10 @@ function usarGeradoHoje() {
 //  HOJE + HISTÓRICO
 // ================================================================
 async function definirHoje(pecasIds, nome) {
-  hoje = { data: hojeStr(), pecas: pecasIds, nome: nome || null };
+  // um outfit cujas peças foram todas apagadas não é um outfit
+  const validas = (pecasIds || []).filter(id => itens.some(i => i.id === id));
+  if (!validas.length) { toast('⚠️ Esse outfit já não tem peças no roupeiro'); return; }
+  hoje = { data: hojeStr(), pecas: validas, nome: nome || null };
   await DB.por('meta', hoje, 'hoje');
   fecharModal('modalEscolherOutfit');
   mudarTab('hoje');
@@ -1828,11 +1876,16 @@ async function gerarSemana() {
 }
 
 function renderSemana() {
-  const tem = semana && semana.dias && semana.dias.length;
-  $('semanaVazia').style.display = tem ? 'none' : 'block';
-  if (!tem) { $('semanaGrid').innerHTML = ''; return; }
   const hj = hojeStr();
-  $('semanaGrid').innerHTML = semana.dias.map(d => {
+  // um plano feito há 10 dias só tem dias passados: mostrá-los era propor
+  // outfits para segunda-feira passada
+  const dias = (semana && Array.isArray(semana.dias) ? semana.dias : []).filter(d => d.data >= hj);
+  $('semanaVazia').style.display = dias.length ? 'none' : 'block';
+  $('semanaVaziaMsg').textContent = semana && semana.dias && semana.dias.length
+    ? 'Este plano já passou. Carrega em "Planear 7 dias" para fazer outro.'
+    : 'Sem plano para esta semana. Carrega em "Planear 7 dias".';
+  if (!dias.length) { $('semanaGrid').innerHTML = ''; return; }
+  $('semanaGrid').innerHTML = dias.map(d => {
     const dt = new Date(d.data + 'T12:00:00');
     return `<div class="dia-card ${d.data === hj ? 'dia-hoje' : ''}">
       <h4>${DIAS_SEMANA[dt.getDay()]}</h4>
@@ -2209,43 +2262,280 @@ function renderCapsula() {
     l.addEventListener('click', () => abrirDetalhe(l.dataset.id)));
 }
 
-// ---------- Mala de viagem ----------
+// ================================================================
+//  MALA DE VIAGEM — organizador do que levar de férias
+// ================================================================
+function malaNova() {
+  return { destino: '', dias: 5, estacao: '', pecas: [], extras: [] };
+}
+// aceita qualquer coisa vinda do disco/backup e devolve uma mala coerente
+function normalizarMala(m) {
+  if (!m || typeof m !== 'object') return malaNova();
+  return {
+    destino: String(m.destino || '').slice(0, 40),
+    dias: Math.max(1, Math.min(30, Number(m.dias) || 5)),
+    estacao: m.estacao in ESTACAO_EMOJI ? m.estacao : '',
+    pecas: Array.isArray(m.pecas)
+      ? m.pecas.filter(p => p && p.id).map(p => ({ id: p.id, feito: !!p.feito }))
+      : [],
+    extras: Array.isArray(m.extras)
+      ? m.extras.filter(e => e && e.nome).map(e => ({
+          id: e.id || novoId('me'),
+          nome: String(e.nome).slice(0, 60),
+          grupo: e.grupo || 'Personalizado',
+          feito: !!e.feito,
+        }))
+      : [],
+  };
+}
+async function guardarMala() {
+  mala = normalizarMala(mala);
+  await guardarSeguro('meta', mala, 'mala');
+}
+
 function renderMala() {
-  const dias = Math.max(1, Math.min(30, Number($('malaDias').value) || 5));
-  const estacao = valorGrupo('malaEstacao');
-  const formalidade = valorGrupo('malaFormalidade');
-  const pool = itens.filter(i =>
-    (!estacao || !i.estacoes.length || i.estacoes.includes(estacao)) &&
-    (formalidade === '' || Math.abs(i.formalidade - Number(formalidade)) <= 1)
-  );
-  const nucleos = calcularNucleos(pool);
-  if (nucleos.length < 1) {
-    $('malaResultado').innerHTML = '<p class="hint">Sem combinações possíveis com esses filtros. Alarga a estação ou a ocasião.</p>';
+  const cont = $('malaResultado');
+  if (!cont) return;
+  sincronizarCabecalhoMala();
+
+  const m = mala || malaNova();
+  // peças apagadas do roupeiro não podem ficar penduradas na mala
+  const pecas = m.pecas.filter(p => itens.some(i => i.id === p.id));
+  if (mala && pecas.length !== m.pecas.length) { mala.pecas = pecas; guardarMala(); }
+
+  const total = pecas.length + m.extras.length;
+  if (!total) {
+    cont.innerHTML = `<div class="empty-state">
+      <div class="icon">🧳</div>
+      <p>A mala está vazia. Carrega em <b>✨ Sugerir roupa</b> para o motor escolher um guarda-roupa mínimo,
+      ou junta peças e essenciais à mão. Depois vais marcando o que já meteste.</p>
+    </div>`;
     return;
   }
 
-  // cobre o suficiente para "dias" looks distintos, e nem uma peça a mais
-  const alvo = Math.min(1, dias / nucleos.length);
+  const feitos = pecas.filter(p => p.feito).length + m.extras.filter(e => e.feito).length;
+  const pct = Math.round(feitos / total * 100);
+  const nomeViagem = m.destino ? esc(m.destino) : 'A tua viagem';
+
+  const roupaHtml = pecas.length ? secaoMala('👕 Roupa', pecas.map(p => {
+    const i = itens.find(x => x.id === p.id);
+    return linhaMala('p:' + p.id, p.feito, malaThumb(i), esc(i.nome), `${cat(i.categoria).nome} · ${esc(i.cor)}`);
+  })) : '';
+
+  const grupos = {};
+  for (const e of m.extras) (grupos[e.grupo] = grupos[e.grupo] || []).push(e);
+  const ordem = [...MALA_ESSENCIAIS.map(g => g.grupo), 'Personalizado'];
+  const extrasHtml = Object.keys(grupos)
+    .sort((a, b) => ordem.indexOf(a) - ordem.indexOf(b))
+    .map(g => secaoMala(`${MALA_GRUPO_EMOJI[g] || '📝'} ${g}`,
+      grupos[g].map(e => linhaMala('e:' + e.id, e.feito, '', esc(e.nome), ''))))
+    .join('');
+
+  cont.innerHTML = `
+    <div class="painel mala-painel">
+      <div class="mala-painel-topo">
+        <div class="mala-viagem-nome"><b>${nomeViagem}</b> · ${m.dias} dia(s)${m.estacao ? ' · ' + ESTACAO_EMOJI[m.estacao] : ''}</div>
+        <div class="mala-contador">${feitos}/${total} na mala</div>
+      </div>
+      <div class="mala-barra"><div class="mala-barra-fill" style="width:${pct}%"></div></div>
+      <div class="mala-legenda">${pct === 100 ? '✅ Mala pronta! Boa viagem.' : `Faltam ${total - feitos} coisa(s) por meter na mala.`}</div>
+    </div>
+    ${roupaHtml}${extrasHtml}`;
+  ligarMala();
+}
+
+// deixa os campos de cabeçalho a espelhar o estado guardado
+function sincronizarCabecalhoMala() {
+  const m = mala || malaNova();
+  const dest = $('malaDestino');
+  if (dest && document.activeElement !== dest) dest.value = m.destino;
+  const dias = $('malaDias');
+  if (dias && document.activeElement !== dias) dias.value = m.dias;
+  const grupo = $('malaEstacao');
+  if (grupo) grupo.querySelectorAll('.btn-toggle').forEach(b =>
+    b.classList.toggle('active', (b.dataset.estacao || '') === m.estacao));
+}
+
+function secaoMala(titulo, linhas) {
+  return `<div class="mala-grupo">
+    <div class="mala-grupo-titulo">${titulo} <span>${linhas.length}</span></div>
+    ${linhas.join('')}
+  </div>`;
+}
+function malaThumb(i) {
+  return `<span class="mala-thumb">${
+    i.foto ? `<img src="${i.foto}" class="${i.recortada ? 'recortada' : ''}">` : cat(i.categoria).emoji
+  }</span>`;
+}
+function linhaMala(key, feito, thumb, nome, sub) {
+  return `<div class="mala-linha ${feito ? 'feito' : ''}" data-key="${key}">
+    <span class="mala-check">${feito ? '✓' : ''}</span>
+    ${thumb || ''}
+    <span class="mala-linha-txt"><span class="mala-linha-nome">${nome}</span>${sub ? `<span class="mala-linha-sub">${sub}</span>` : ''}</span>
+    <button type="button" class="mala-remover" title="Tirar da mala">×</button>
+  </div>`;
+}
+
+function ligarMala() {
+  $('malaResultado').querySelectorAll('.mala-linha').forEach(l => {
+    const key = l.dataset.key;
+    l.addEventListener('click', e => {
+      if (e.target.closest('.mala-remover')) return;
+      const feito = !l.classList.contains('feito');
+      const ref = malaRef(key);
+      if (!ref) return;
+      ref.feito = feito;
+      guardarMala();
+      l.classList.toggle('feito', feito);
+      l.querySelector('.mala-check').textContent = feito ? '✓' : '';
+      atualizarProgressoMala();
+    });
+    l.querySelector('.mala-remover').addEventListener('click', e => {
+      e.stopPropagation();
+      removerDaMala(key);
+    });
+  });
+}
+function malaRef(key) {
+  const id = key.slice(2);
+  return key[0] === 'p'
+    ? mala && mala.pecas.find(p => p.id === id)
+    : mala && mala.extras.find(e => e.id === id);
+}
+function removerDaMala(key) {
+  if (!mala) return;
+  const id = key.slice(2);
+  if (key[0] === 'p') mala.pecas = mala.pecas.filter(p => p.id !== id);
+  else mala.extras = mala.extras.filter(e => e.id !== id);
+  guardarMala();
+  renderMala();
+}
+// atualiza a barra sem re-render — não perde a posição do scroll ao marcar
+function atualizarProgressoMala() {
+  if (!mala) return;
+  const pecas = mala.pecas.filter(p => itens.some(i => i.id === p.id));
+  const total = pecas.length + mala.extras.length;
+  const feitos = pecas.filter(p => p.feito).length + mala.extras.filter(e => e.feito).length;
+  const pct = total ? Math.round(feitos / total * 100) : 0;
+  const cont = $('malaResultado');
+  const fill = cont.querySelector('.mala-barra-fill');
+  const contador = cont.querySelector('.mala-contador');
+  const leg = cont.querySelector('.mala-legenda');
+  if (fill) fill.style.width = pct + '%';
+  if (contador) contador.textContent = `${feitos}/${total} na mala`;
+  if (leg) leg.textContent = pct === 100 ? '✅ Mala pronta! Boa viagem.' : `Faltam ${total - feitos} coisa(s) por meter na mala.`;
+}
+
+// ---------- Sugerir roupa (motor da cápsula, limitado aos dias) ----------
+function sugerirRoupaMala() {
+  if (!mala) mala = malaNova();
+  const estacao = mala.estacao;
+  const pool = itens.filter(i => !estacao || !i.estacoes.length || i.estacoes.includes(estacao));
+  const nucleos = calcularNucleos(pool);
+  if (nucleos.length < 1) {
+    toast('⚠️ Sem combinações para sugerir. Adiciona mais peças ou alarga a estação.');
+    return;
+  }
+  const alvo = Math.min(1, mala.dias / nucleos.length);
   const r = resolverCapsula(nucleos, alvo);
-  const sapatos = pool.filter(p => cat(p.categoria).slot === 'calcado').sort((a, b) => pesoItem(b) - pesoItem(a)).slice(0, dias > 4 ? 2 : 1);
+  const sapatos = pool.filter(p => cat(p.categoria).slot === 'calcado').sort((a, b) => pesoItem(b) - pesoItem(a)).slice(0, mala.dias > 4 ? 2 : 1);
   const casacos = (estacao === 'inverno' || estacao === 'outono' || !estacao)
     ? pool.filter(p => cat(p.categoria).slot === 'casaco').sort((a, b) => pesoItem(b) - pesoItem(a)).slice(0, 1) : [];
   const acessorios = pool.filter(p => cat(p.categoria).slot === 'acessorio').sort((a, b) => pesoItem(b) - pesoItem(a)).slice(0, 2);
-  const totalPecas = r.escolhidas.length + sapatos.length + casacos.length + acessorios.length;
+  const sugeridas = [...r.escolhidas, ...casacos, ...sapatos, ...acessorios];
+  let novas = 0;
+  for (const p of sugeridas) if (!mala.pecas.some(x => x.id === p.id)) {
+    mala.pecas.push({ id: p.id, feito: false });
+    novas++;
+  }
+  guardarMala();
+  renderMala();
+  toast(novas ? `✨ ${novas} peça(s) sugeridas (${r.cobertos} looks sem repetir)` : 'Já tinhas na mala tudo o que eu sugeria');
+}
 
-  $('malaResultado').innerHTML = `
-    <div class="painel painel-destaque">
-      Para <b>${dias} dias</b> levas <b>${totalPecas} peças</b> e sais com <b>${r.cobertos} looks diferentes</b>.
-      ${r.cobertos >= dias
-        ? `<br>Chega e sobra — dá para ${r.cobertos - dias} dia(s) extra sem repetir.`
-        : `<br>⚠️ Só dá para ${r.cobertos} look(s) distintos. Vais ter de repetir ${dias - r.cobertos} dia(s), ou levar mais peças.`}
-    </div>
-    <h3 class="sec-titulo">🧳 Lista de mala</h3>
-    <div class="grid" id="malaGrid">${[...r.escolhidas, ...casacos, ...sapatos, ...acessorios].map(cardPeca).join('')}</div>
-    <p class="hint" style="margin-top:14px">
-      Peso morto evitado: das ${pool.length} peças que encaixavam nos filtros, ${pool.length - totalPecas} ficam em casa sem te fazerem falta.
-    </p>`;
-  ligarCards('malaGrid');
+// ---------- Escolher roupa à mão ----------
+function abrirMalaRoupa() {
+  if (!itens.length) { toast('⚠️ Adiciona peças à biblioteca primeiro'); return; }
+  if (!mala) mala = malaNova();
+  pickerSelecao = new Set(mala.pecas.map(p => p.id).filter(id => itens.some(i => i.id === id)));
+  const ordenados = [...itens].sort((a, b) => pickerSelecao.has(b.id) - pickerSelecao.has(a.id));
+  $('malaGridPicker').innerHTML = ordenados.map(cardPeca).join('');
+  $('malaGridPicker').querySelectorAll('.peca-card').forEach(c => {
+    c.classList.toggle('selecionada', pickerSelecao.has(c.dataset.id));
+    c.addEventListener('click', () => {
+      const id = c.dataset.id;
+      if (pickerSelecao.has(id)) { pickerSelecao.delete(id); c.classList.remove('selecionada'); }
+      else { pickerSelecao.add(id); c.classList.add('selecionada'); }
+    });
+  });
+  abrirModal('modalMalaRoupa');
+}
+async function guardarMalaRoupa() {
+  if (!mala) mala = malaNova();
+  // preserva o "já na mala" das peças que se mantêm
+  const feitoPor = new Map(mala.pecas.map(p => [p.id, p.feito]));
+  mala.pecas = [...pickerSelecao].map(id => ({ id, feito: feitoPor.get(id) || false }));
+  await guardarMala();
+  fecharModal('modalMalaRoupa');
+  renderMala();
+  toast('👕 Roupa atualizada na mala');
+}
+
+// ---------- Essenciais e itens personalizados ----------
+function abrirMalaExtras() {
+  if (!mala) mala = malaNova();
+  $('malaExtraInput').value = '';
+  renderMalaCatalogo();
+  abrirModal('modalMalaExtras');
+}
+function renderMalaCatalogo() {
+  const dentro = new Set((mala ? mala.extras : []).map(e => e.nome.toLowerCase()));
+  $('malaCatalogo').innerHTML = MALA_ESSENCIAIS.map(g => `
+    <div class="mala-cat-grupo">
+      <div class="mala-cat-titulo">${g.emoji} ${g.grupo}</div>
+      <div class="mala-chips">
+        ${g.itens.map(nome => {
+          const on = dentro.has(nome.toLowerCase());
+          return `<button type="button" class="mala-chip ${on ? 'on' : ''}" data-grupo="${g.grupo}" data-nome="${esc(nome)}">${on ? '✓ ' : '+ '}${esc(nome)}</button>`;
+        }).join('')}
+      </div>
+    </div>`).join('');
+  $('malaCatalogo').querySelectorAll('.mala-chip').forEach(ch =>
+    ch.addEventListener('click', () => alternarExtraCatalogo(ch.dataset.nome, ch.dataset.grupo)));
+}
+function alternarExtraCatalogo(nome, grupo) {
+  if (!mala) mala = malaNova();
+  const idx = mala.extras.findIndex(e => e.nome.toLowerCase() === nome.toLowerCase());
+  if (idx >= 0) mala.extras.splice(idx, 1);
+  else mala.extras.push({ id: novoId('me'), nome, grupo, feito: false });
+  guardarMala();
+  renderMalaCatalogo();
+  renderMala();
+}
+function adicionarExtraCustom() {
+  if (!mala) mala = malaNova();
+  const nome = ($('malaExtraInput').value || '').trim();
+  if (!nome) return;
+  if (mala.extras.some(e => e.nome.toLowerCase() === nome.toLowerCase())) {
+    toast('Isso já está na mala');
+    $('malaExtraInput').value = '';
+    return;
+  }
+  mala.extras.push({ id: novoId('me'), nome: nome.slice(0, 60), grupo: 'Personalizado', feito: false });
+  guardarMala();
+  $('malaExtraInput').value = '';
+  renderMalaCatalogo();
+  renderMala();
+  toast('➕ Adicionado à mala');
+}
+
+async function limparMala() {
+  if (!mala || (!mala.pecas.length && !mala.extras.length)) { toast('A mala já está vazia'); return; }
+  if (!confirm('Esvaziar a mala?\n\nRemove toda a roupa e os essenciais. O destino e os dias ficam.')) return;
+  mala = { destino: mala.destino, dias: mala.dias, estacao: mala.estacao, pecas: [], extras: [] };
+  await guardarMala();
+  renderMala();
+  toast('🗑️ Mala esvaziada');
 }
 
 // ================================================================
@@ -2314,7 +2604,7 @@ async function exportarTudo() {
     versao: 2,
     exportado: new Date().toISOString(),
     itens, outfits, historico,
-    meta: { gostos, hoje, semana },
+    meta: { gostos, hoje, semana, mala },
   };
 
   // Um perfil cifrado não deve cuspir um backup em texto limpo por descuido.
@@ -2382,12 +2672,14 @@ async function importarBackup(file) {
 
   await DB.limpar('itens'); await DB.limpar('outfits'); await DB.limpar('historico');
   for (const i of dados.itens) await DB.por('itens', normalizarItem(i));
-  for (const o of (dados.outfits || [])) await DB.por('outfits', o);
-  for (const h of (dados.historico || [])) await DB.por('historico', h);
+  // registos sem os campos-chave rebentariam o render mais tarde, longe daqui
+  for (const o of (dados.outfits || [])) if (o && o.id && Array.isArray(o.pecas)) await DB.por('outfits', o);
+  for (const h of (dados.historico || [])) if (h && h.data && Array.isArray(h.pecas)) await DB.por('historico', h);
   const meta = dados.meta || {};
   await DB.por('meta', meta.gostos || { scores: {}, pares: {} }, 'gostos');
   await DB.por('meta', meta.hoje && meta.hoje.data === hojeStr() ? meta.hoje : null, 'hoje');
   await DB.por('meta', meta.semana || null, 'semana');
+  await DB.por('meta', normalizarMala(meta.mala), 'mala');
 
   itens = (await DB.todos('itens')).map(normalizarItem);
   outfits = await DB.todos('outfits');
@@ -2395,6 +2687,7 @@ async function importarBackup(file) {
   gostos = (await DB.metaGet('gostos')) || { scores: {}, pares: {} };
   hoje = (await DB.metaGet('hoje')) || null;
   semana = (await DB.metaGet('semana')) || null;
+  mala = normalizarMala(await DB.metaGet('mala'));
 
   fecharModal('modalDefinicoes');
   renderTudo();
@@ -2406,8 +2699,9 @@ async function apagarTudo() {
   if (!confirm('A sério? Última confirmação.')) return;
   await DB.limpar('itens'); await DB.limpar('outfits'); await DB.limpar('historico');
   await DB.por('meta', null, 'hoje'); await DB.por('meta', null, 'semana');
+  await DB.por('meta', null, 'mala');
   await DB.por('meta', { scores: {}, pares: {} }, 'gostos');
-  itens = []; outfits = []; historico = []; hoje = null; semana = null;
+  itens = []; outfits = []; historico = []; hoje = null; semana = null; mala = null;
   gostos = { scores: {}, pares: {} };
   fecharModal('modalDefinicoes');
   renderTudo();

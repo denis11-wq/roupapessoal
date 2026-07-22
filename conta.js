@@ -28,6 +28,10 @@ function renderEcraPerfis() {
   $('painelPerfis').style.display = 'block';
   $('painelSenha').style.display = 'none';
   $('painelNuvem').style.display = 'none';
+  // instalação nova: não há nada para escolher, o que há a fazer é criar a conta
+  $('perfisHint').textContent = Perfis.lista.length
+    ? 'Escolhe a tua conta para entrar.'
+    : 'Ainda não há contas neste dispositivo. Cria uma — ou traz a tua de outro.';
   $('listaPerfis').innerHTML = Perfis.lista.map(p => `
     <button class="perfil-cartao ${p.cifrado ? '' : 'por-proteger'}" data-id="${p.id}">
       <span class="perfil-avatar">${p.emoji}</span>
@@ -83,9 +87,17 @@ async function submeterSenha() {
     return;
   }
   btn.textContent = '⏳ A ligar...';
-  await ligarNuvemEmSilencio(perfilEmFoco, senha);
-  btn.disabled = false; btn.textContent = '🔓 Entrar';
-  await entrarNoPerfil(perfilEmFoco);
+  try {
+    await ligarNuvemEmSilencio(perfilEmFoco, senha);
+    await entrarNoPerfil(perfilEmFoco);
+  } catch (e) {
+    // sem isto, uma falha a abrir a base deixava o ecrã de bloqueio mudo e o
+    // botão preso em "A ligar..."
+    Perfis.trancar();
+    toast('⚠️ Não consegui abrir este roupeiro: ' + (e && e.message ? e.message : 'erro'));
+  } finally {
+    btn.disabled = false; btn.textContent = '🔓 Entrar';
+  }
 }
 
 // Cria a conta no servidor com a mesma identidade. Se a nuvem não estiver
@@ -319,6 +331,8 @@ async function aplicarMudancaSenha() {
   try {
     await Perfis.mudarSenha(Perfis.atual, senha);
     fecharModal('modalSenha');
+    // o que está na nuvem ficou cifrado com a chave antiga: tem de ser reenviado
+    Nuvem.agendar();
     if (eraEmClaro) await entrarNoPerfil(Perfis.atual);   // acabou de proteger: entra já
     else atualizarChipPerfil();
     toast('🔒 Conta protegida e encriptada');
@@ -358,7 +372,14 @@ function ligarEventosConta() {
   // proteger uma conta antiga não é opcional: cancelar volta ao ecrã de contas
   $('btnMsCancelar').addEventListener('click', () => {
     fecharModal('modalSenha');
-    if (Perfis.atual && !Perfis.atual.cifrado) { perfilEmFoco = null; mostrarEcraPerfis(null); }
+    // desistir de proteger tem de largar mesmo a conta: ficar com a base aberta
+    // em claro e Perfis.atual preenchido por trás do ecrã de bloqueio é pior
+    if (Perfis.atual && !Perfis.atual.cifrado) {
+      Perfis.trancar();
+      DB.fechar();
+      perfilEmFoco = null;
+      mostrarEcraPerfis(null);
+    }
   });
   $('btnMsGuardar').addEventListener('click', () => aplicarMudancaSenha());
   $('msSenha').addEventListener('input', avaliarSenhaMudar);

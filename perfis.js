@@ -39,13 +39,22 @@ const Perfis = {
   configGet(k) { return Perfis._op('config', 'readonly', s => s.get(k)); },
   configPor(v, k) { return Perfis._op('config', 'readwrite', s => s.put(v, k)); },
 
+  // Só interessa saber isto para não inventar uma conta "Eu" a pedir palavra-passe
+  // numa instalação nova, onde não há dados nenhuns para recuperar.
+  async temBaseAntiga() {
+    try {
+      if (!indexedDB.databases) return true;        // browser não diz: assume que sim, é o lado seguro
+      return (await indexedDB.databases()).some(d => d.name === 'roupeiro');
+    } catch { return true; }
+  },
+
   async carregar() {
     await Perfis.abrirSistema();
     Perfis.lista = (await Perfis._op('perfis', 'readonly', s => s.getAll())) || [];
 
     // Primeira vez: cria o perfil "principal" apontado à base de dados que já existe,
     // para quem já tem peças não perder nada.
-    if (!Perfis.lista.length) {
+    if (!Perfis.lista.length && await Perfis.temBaseAntiga()) {
       const inicial = {
         id: 'principal', nome: 'Eu', emoji: '👤',
         cifrado: false, salt: null, verificador: null,

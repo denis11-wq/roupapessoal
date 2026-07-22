@@ -874,6 +874,92 @@ input[type=checkbox] { accent-color: var(--accent); width: 17px; height: 17px; }
 .painel-destaque { font-size: 1.02rem; line-height: 1.7; }
 .painel-destaque b { color: var(--accent2); }
 
+/* ===================== MALA / ORGANIZADOR DE VIAGEM ===================== */
+.mala-topo { margin-bottom: 18px; }
+.mala-destino {
+  width: 100%;
+  font-size: 1.02rem;
+  padding: 12px 15px;
+  margin-bottom: 12px;
+}
+.mala-acoes { flex-wrap: wrap; gap: 8px; }
+
+.mala-painel { padding: 18px 20px; }
+.mala-painel-topo {
+  display: flex; justify-content: space-between; align-items: center;
+  gap: 12px; flex-wrap: wrap; margin-bottom: 12px; font-size: 0.95rem;
+}
+.mala-viagem-nome b { color: var(--accent2); }
+.mala-contador { font-weight: 800; color: var(--accent2); white-space: nowrap; }
+.mala-barra { height: 12px; background: var(--border-soft); border-radius: 999px; overflow: hidden; }
+.mala-barra-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent), var(--success));
+  border-radius: 999px;
+  transition: width .35s var(--ease);
+}
+.mala-legenda { font-size: 0.8rem; color: var(--muted); margin-top: 9px; }
+
+.mala-grupo { margin-top: 18px; }
+.mala-grupo-titulo {
+  font-size: 0.8rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
+  color: var(--muted); margin-bottom: 9px; display: flex; align-items: center; gap: 8px;
+}
+.mala-grupo-titulo span {
+  background: var(--border-soft); color: var(--muted);
+  border-radius: 999px; padding: 1px 9px; font-size: 0.72rem; font-weight: 700;
+}
+
+.mala-linha {
+  display: flex; align-items: center; gap: 12px;
+  background: var(--surface); border: 1px solid var(--border-soft);
+  border-radius: var(--radius); padding: 10px 12px; margin-bottom: 8px;
+  cursor: pointer; user-select: none;
+  transition: border-color .15s, opacity .15s, background .15s;
+}
+.mala-linha:hover { border-color: var(--accent); }
+.mala-check {
+  flex: none; width: 24px; height: 24px; border-radius: 7px;
+  border: 2px solid var(--border); display: grid; place-items: center;
+  font-size: 0.85rem; font-weight: 800; color: #fff; transition: background .15s, border-color .15s;
+}
+.mala-linha.feito { opacity: 0.55; }
+.mala-linha.feito .mala-check { background: var(--success); border-color: var(--success); color: var(--success-ink); }
+.mala-linha.feito .mala-linha-nome { text-decoration: line-through; }
+.mala-thumb {
+  flex: none; width: 40px; height: 40px; border-radius: 9px; overflow: hidden;
+  display: grid; place-items: center; background: var(--surface2); font-size: 1.2rem;
+}
+.mala-thumb img { width: 100%; height: 100%; object-fit: cover; }
+.mala-thumb img.recortada { object-fit: contain; }
+.mala-linha-txt { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.mala-linha-nome { font-size: 0.9rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mala-linha-sub { font-size: 0.74rem; color: var(--muted); }
+.mala-remover {
+  flex: none; width: 30px; height: 30px; border-radius: 8px; border: none;
+  background: transparent; color: var(--muted); font-size: 1.35rem; line-height: 1;
+  cursor: pointer; transition: background .15s, color .15s;
+}
+.mala-remover:hover { background: var(--danger); color: #fff; }
+
+/* catálogo de essenciais dentro do modal */
+.mala-add-custom { display: flex; gap: 8px; }
+.mala-add-custom input { flex: 1; }
+.mala-add-custom .btn { flex: none; }
+.mala-cat-grupo { margin-bottom: 15px; }
+.mala-cat-titulo { font-size: 0.78rem; font-weight: 700; color: var(--muted); margin-bottom: 8px; }
+.mala-chips { display: flex; flex-wrap: wrap; gap: 7px; }
+.mala-chip {
+  border: 1px solid var(--border); background: var(--surface); color: var(--text);
+  border-radius: 999px; padding: 6px 12px; font-size: 0.82rem; cursor: pointer;
+  transition: border-color .15s, background .15s;
+}
+.mala-chip:hover { border-color: var(--accent); }
+.mala-chip.on {
+  background: color-mix(in srgb, var(--success) 16%, var(--surface));
+  border-color: var(--success); font-weight: 600;
+}
+
 /* ===================== MODAIS ===================== */
 /* Camadas (não mexer sem verificar todas):
    header 60 · tabs 55 · bloqueio 300 · modais 400 · toast 500.
